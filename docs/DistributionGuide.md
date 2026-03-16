@@ -81,8 +81,15 @@ git push -u origin main
 ## 三、同事使用说明
 
 ### Mac 用户
-1. 双击 `.dmg` → 拖到 Applications → 从启动台打开
-2. 首次可能需要在「系统设置 → 隐私与安全性」里允许运行
+1. 双击 `.dmg` → 拖放到 **Applications（应用程序）** 文件夹
+2. 从启动台（Launchpad）打开「拆梦机器」
+3. **⚠️ 常见错误提示（文件已损坏）：**
+   如果您并没有购买苹果的开发者证书进行签名，发给同事的 App 被他们从网上下载后，macOS 的「门禁系统 (Gatekeeper)」会为了安全起见给它打上隔离标签，并弹窗提示：**“文件已损坏，打不开。您应该将它移到废纸篓。”**
+   **解决办法**：让同事打开 Mac 自带的「终端」应用，复制粘贴以下命令并回车（可能需要输入开机密码）：
+   ```bash
+   sudo xattr -rd com.apple.quarantine "/Applications/DeDream Machine.app"
+   ```
+   执行完后，再次双击打开 App 就可以完美运行了！
 
 ### Windows 用户
 1. 双击 `.exe` 安装包 → 按提示安装

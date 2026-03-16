@@ -82,39 +82,44 @@ export async function smartImport(
     const strategy = `生成标准化剪辑代理 (${isHW ? '硬件加速' : '软件编码'})`;
 
     onProgress?.(5, strategy);
-    console.log('[smartImport] Video info:', info);
+    console.log('[smartImport] Video info:', info, 'encoder:', encoder);
 
-    const args: string[] = [
-        '-v', 'warning',
-        '-y',
-        '-i', inputPath
-    ];
+    // Build FFmpeg args with the detected encoder
+    const buildArgs = (enc: string): string[] => {
+        const a: string[] = ['-v', 'warning', '-y', '-i', inputPath];
+        if (enc === 'h264_videotoolbox') {
+            a.push('-c:v', 'h264_videotoolbox', '-b:v', '4000k', '-vf', 'scale=-2:720');
+        } else if (enc === 'h264_nvenc') {
+            a.push('-c:v', 'h264_nvenc', '-preset', 'p4', '-b:v', '4000k', '-vf', 'scale=-2:720');
+        } else if (enc === 'h264_qsv') {
+            a.push('-c:v', 'h264_qsv', '-preset', 'fast', '-b:v', '4000k', '-vf', 'scale=-2:720');
+        } else {
+            a.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '26', '-vf', 'scale=-2:720');
+        }
+        a.push(
+            '-c:a', 'aac', '-ac', '2', '-b:a', '192k',
+            '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+            '-progress', 'pipe:1', proxyPath
+        );
+        return a;
+    };
 
-    if (encoder === 'h264_videotoolbox') {
-        args.push('-c:v', 'h264_videotoolbox', '-b:v', '4000k', '-vf', 'scale=-2:720');
-    } else if (encoder === 'h264_nvenc') {
-        args.push('-c:v', 'h264_nvenc', '-preset', 'p4', '-b:v', '4000k', '-vf', 'scale=-2:720');
-    } else if (encoder === 'h264_qsv') {
-        args.push('-c:v', 'h264_qsv', '-preset', 'fast', '-b:v', '4000k', '-vf', 'scale=-2:720');
-    } else {
-        args.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '26', '-vf', 'scale=-2:720');
+    // Try with detected encoder first; if it fails, retry with safe libx264
+    try {
+        const cmd = Command.sidecar('bin/ffmpeg', buildArgs(encoder));
+        await executeWithProgress(cmd, info.duration, onProgress, '代理生成中...');
+    } catch (err) {
+        if (encoder !== 'libx264') {
+            console.warn(`[smartImport] ${encoder} failed, falling back to libx264:`, err);
+            onProgress?.(5, '硬件编码失败，已自动切换为软件编码...');
+            const cmd2 = Command.sidecar('bin/ffmpeg', buildArgs('libx264'));
+            await executeWithProgress(cmd2, info.duration, onProgress, '软件编码中...');
+        } else {
+            throw err; // libx264 itself failed, nothing to fall back to
+        }
     }
 
-    // Standardize audio and container formats for WebKit
-    args.push(
-        '-c:a', 'aac',
-        '-ac', '2',
-        '-b:a', '192k',
-        '-pix_fmt', 'yuv420p',
-        '-movflags', '+faststart',
-        '-progress', 'pipe:1',
-        proxyPath
-    );
-
-    const cmd = Command.sidecar('bin/ffmpeg', args);
-    await executeWithProgress(cmd, info.duration, onProgress, '代理生成中...');
     onProgress?.(100, '导入完成');
-
     return { playablePath: proxyPath, info, strategy };
 }
 
