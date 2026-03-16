@@ -6,9 +6,10 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false  # 一个平台失败不影响另一个
       matrix:
         include:
-          - platform: macos-latest
+          - platform: macos-14        # Apple Silicon (M1) runner
             target: aarch64-apple-darwin
             label: macOS-ARM
           - platform: windows-latest
@@ -32,16 +33,25 @@ jobs:
 
       # ---- macOS: 下载 ARM 版 FFmpeg & FFprobe ----
       - name: Download FFmpeg (macOS ARM)
-        if: matrix.platform == 'macos-latest'
+        if: matrix.platform == 'macos-14'
         run: |
           mkdir -p src-tauri/bin
-          npm install ffmpeg-static ffprobe-static
-          cp node_modules/ffmpeg-static/ffmpeg src-tauri/bin/ffmpeg-aarch64-apple-darwin
+
+          # Download ffmpeg static binary
+          curl -L -o /tmp/ffmpeg.zip https://evermeet.cx/ffmpeg/getrelease/zip
+          unzip -o /tmp/ffmpeg.zip -d /tmp/ffmpeg_out
+          cp /tmp/ffmpeg_out/ffmpeg src-tauri/bin/ffmpeg-aarch64-apple-darwin
           chmod +x src-tauri/bin/ffmpeg-aarch64-apple-darwin
-          # ffprobe-static 的路径结构
-          FFPROBE_PATH=$(node -e "console.log(require('ffprobe-static').path)")
-          cp "$FFPROBE_PATH" src-tauri/bin/ffprobe-aarch64-apple-darwin
+
+          # Download ffprobe static binary
+          curl -L -o /tmp/ffprobe.zip https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip
+          unzip -o /tmp/ffprobe.zip -d /tmp/ffprobe_out
+          cp /tmp/ffprobe_out/ffprobe src-tauri/bin/ffprobe-aarch64-apple-darwin
           chmod +x src-tauri/bin/ffprobe-aarch64-apple-darwin
+
+          # Verify
+          ls -lh src-tauri/bin/
+          file src-tauri/bin/ffmpeg-aarch64-apple-darwin
 
       # ---- Windows: 下载 x64 版 FFmpeg & FFprobe ----
       - name: Download FFmpeg (Windows x64)
@@ -58,6 +68,7 @@ jobs:
           $probeFile = Get-ChildItem -Path ffmpeg-tmp -Recurse -Filter "ffprobe.exe" | Select-Object -First 1
           Copy-Item $probeFile.FullName -Destination "src-tauri/bin/ffprobe-x86_64-pc-windows-msvc.exe"
           Remove-Item $zipFile, ffmpeg-tmp -Recurse -Force
+          Get-ChildItem src-tauri/bin/
 
       - name: Install frontend dependencies
         run: npm install
