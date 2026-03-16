@@ -4,6 +4,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { formatTime } from '../../utils/timeFormat';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
+import { join } from '@tauri-apps/api/path';
 import { smartImport, takeScreenshot } from '../../services/ffmpegService';
 import { AssetSelectModal } from '../assets/AssetSelectModal';
 import type { Asset } from '../../types';
@@ -219,7 +220,7 @@ export const VideoPlayer: React.FC = () => {
                 // Generate clean filename
                 const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
                 const filename = `${asset.name}_${dateStr}.png`;
-                const outputPath = `${workspace}/assets/${asset.category}/${asset.name}/${filename}`;
+                const outputPath = await join(workspace, 'assets', asset.category, asset.name, filename);
 
                 await takeScreenshot(project.videoFilePath, timestamp, outputPath);
                 showToast(`提取成功！截图已保存至 ${asset.name} 资产`);
@@ -229,7 +230,7 @@ export const VideoPlayer: React.FC = () => {
                 const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
                 const ext = isAudio ? 'mp3' : 'mp4';
                 const filename = `${asset.name}_${isAudio ? 'audio' : 'clip'}_${dateStr}.${ext}`;
-                const outputPath = `${workspace}/assets/${asset.category}/${asset.name}/${filename}`;
+                const outputPath = await join(workspace, 'assets', asset.category, asset.name, filename);
 
                 const { invoke } = await import('@tauri-apps/api/core');
                 await invoke('ensure_workspace_dirs', { workspace }); // optional safety

@@ -1,5 +1,6 @@
 import { Command } from '@tauri-apps/plugin-shell';
 import { mkdir } from '@tauri-apps/plugin-fs';
+import { join } from '@tauri-apps/api/path';
 
 export interface VideoInfo {
     duration: number;
@@ -76,7 +77,7 @@ export async function smartImport(
     onProgress?.(0, '正在分析视频...');
     const info = await getVideoInfo(inputPath);
 
-    const proxyPath = `${workspacePath}/proxy.mp4`;
+    const proxyPath = await join(workspacePath, 'proxy.mp4');
     const encoder = await detectHWEncoder();
     const isHW = encoder !== 'libx264';
     const strategy = `生成标准化剪辑代理 (${isHW ? '硬件加速' : '软件编码'})`;
@@ -148,13 +149,25 @@ function executeWithProgress(
 ): Promise<void> {
     return new Promise((resolve, reject) => {
         let lastPercent = 5;
+        let stderrLog = '';
 
         cmd.on('close', (data) => {
             if (data.code === 0) resolve();
-            else reject(new Error(`FFmpeg failed with code ${data.code}`));
+            else {
+                // Return the last 500 chars of stderr to keep the error concise but informative
+                const tail = stderrLog.length > 500 ? '...' + stderrLog.slice(-500) : stderrLog;
+                reject(new Error(`FFmpeg exited with code ${data.code}\nLogs: ${tail}`));
+            }
         });
 
-        cmd.on('error', (err) => reject(new Error(`FFmpeg error: ${err}`)));
+        cmd.on('error', (err) => reject(new Error(`FFmpeg invocation error: ${err}`)));
+
+        cmd.stderr.on('data', (line: string) => {
+            if (line.trim()) {
+                console.warn('[FFmpeg STDERR]', line.trim());
+                stderrLog += line + '\n';
+            }
+        });
 
         cmd.stdout.on('data', (line: string) => {
             const timeMatch = line.match(/out_time_ms=(\d+)/);
@@ -175,11 +188,16 @@ function executeWithProgress(
 // --- Utility exports (screenshots, clips, thumbnails) ---
 
 async function ensureDirForFile(filePath: string) {
-    const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+    // We normalize paths so we can reliably find the directory name
+    const normalized = filePath.replace(/\\/g, '/');
+    const dir = normalized.substring(0, normalized.lastIndexOf('/'));
     try {
         await mkdir(dir, { recursive: true });
-    } catch (err) {
-        console.warn('mkdir failed or exists:', err);
+    } catch (e: any) {
+        const msg = String(e?.message || e || '');
+        if (!msg.includes('exists') && !msg.includes('Already exists')) {
+            throw e;
+        }
     }
 }
 
