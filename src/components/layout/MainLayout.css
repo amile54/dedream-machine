@@ -1,0 +1,270 @@
+.main-layout {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: #0a0a16;
+    color: #e0e0f0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+}
+
+/* Header */
+.layout-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1rem;
+    height: 42px;
+    background: rgba(15, 15, 30, 0.95);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    flex-shrink: 0;
+    -webkit-app-region: drag;
+    app-region: drag;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.app-logo {
+    font-size: 1.1rem;
+}
+
+.app-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #aaaace;
+    letter-spacing: 0.02em;
+}
+
+.workspace-path {
+    font-size: 0.75rem;
+    color: #555;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+
+.project-metadata {
+    display: flex;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 0 0.5rem;
+    height: 28px;
+    margin-right: 1rem;
+}
+
+.meta-input {
+    background: transparent;
+    border: none;
+    color: #ccc;
+    font-size: 0.8rem;
+    outline: none;
+    width: 100px;
+    transition: all 0.2s;
+}
+
+.meta-input:focus {
+    color: #fff;
+    width: 130px;
+}
+
+.meta-input::placeholder {
+    color: rgba(255, 255, 255, 0.2);
+}
+
+.meta-divider {
+    width: 1px;
+    height: 14px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 0 0.5rem;
+}
+
+.unsaved-badge {
+    color: #ffaa44;
+    font-size: 0.7rem;
+    animation: blink 1.5s ease-in-out infinite;
+}
+
+@keyframes blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.3;
+    }
+}
+
+.save-btn {
+    background: rgba(80, 80, 200, 0.15);
+    border: 1px solid rgba(80, 80, 200, 0.25);
+    border-radius: 6px;
+    color: #8888cc;
+    font-size: 0.78rem;
+    padding: 0.25rem 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.save-btn:hover {
+    background: rgba(80, 80, 200, 0.3);
+    color: #aaaaee;
+}
+
+/* Body */
+.layout-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    /* CRITICAL FIX: Ensure the body explicitly disables drag region so UI elements are clickable */
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+
+/* React Split Overrides */
+.split-horizontal {
+    display: flex;
+    flex-direction: row;
+    height: 100%;
+    width: 100%;
+}
+
+.split-vertical {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+}
+
+.gutter {
+    background-color: rgba(255, 255, 255, 0.05);
+    background-repeat: no-repeat;
+    background-position: 50%;
+    transition: background-color 0.2s;
+    z-index: 50;
+}
+
+.gutter.gutter-horizontal {
+    cursor: col-resize;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="20" viewBox="0 0 4 20"><circle cx="2" cy="2" r="1.5" fill="%23666"/><circle cx="2" cy="10" r="1.5" fill="%23666"/><circle cx="2" cy="18" r="1.5" fill="%23666"/></svg>');
+}
+
+.gutter.gutter-vertical {
+    cursor: row-resize;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="4" viewBox="0 0 20 4"><circle cx="2" cy="2" r="1.5" fill="%23666"/><circle cx="10" cy="2" r="1.5" fill="%23666"/><circle cx="18" cy="2" r="1.5" fill="%23666"/></svg>');
+}
+
+.gutter:hover {
+    background-color: rgba(100, 100, 250, 0.4);
+}
+
+.layout-assets {
+    height: 100%;
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+}
+
+.layout-video {
+    min-height: 200px;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.layout-timeline {
+    height: 100%;
+    overflow: hidden;
+    background: #12121e;
+}
+
+.layout-analysis {
+    height: 100%;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.layout-sidebar {
+    height: 100%;
+    border-left: 1px solid rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+}
+
+/* Status bar */
+.layout-statusbar {
+    height: 26px;
+    display: flex;
+    align-items: center;
+    padding: 0 0.8rem;
+    background: rgba(15, 15, 30, 0.95);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    flex-shrink: 0;
+}
+
+.status-info {
+    font-size: 0.68rem;
+    color: #555;
+    letter-spacing: 0.01em;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+    .layout-sidebar {
+        width: 280px;
+        min-width: 220px;
+    }
+}
+
+.sidebar-toggle-btn {
+    position: absolute;
+    bottom: 1rem;
+    left: 0;
+    width: 20px;
+    height: 40px;
+    background: rgba(30, 30, 50, 0.8);
+    color: #aaccff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 100;
+    border-radius: 0 4px 4px 0;
+    font-size: 10px;
+    user-select: none;
+    transition: background 0.2s, color 0.2s, left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-left: none;
+}
+
+.sidebar-toggle-btn:hover {
+    background: rgba(50, 50, 80, 0.9);
+    color: #ffffff;
+}
+
+.sidebar-toggle-btn.open {
+    /* When sidebar is open, button clings to the splitter (roughly 20% width)
+       But since react-split uses percentages, absolute left is tricky.
+       Actually, let's just keep it fixed at left: 0 regardless, it looks cleaner as a tab.
+    */
+    left: 0;
+}

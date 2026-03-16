@@ -1,0 +1,340 @@
+.video-player {
+    display: flex;
+    flex-direction: column;
+    background: #0d0d1a;
+    border-radius: 8px;
+    overflow: hidden;
+    height: 100%;
+}
+
+.video-player--empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+}
+
+.video-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    overflow: hidden;
+    position: relative;
+}
+
+.video-container video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    cursor: pointer;
+}
+
+/* Import UI */
+.import-button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 2rem 3rem;
+    background: rgba(60, 60, 120, 0.2);
+    border: 2px dashed rgba(100, 100, 200, 0.3);
+    border-radius: 16px;
+    color: #8888cc;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.import-button:hover {
+    background: rgba(60, 60, 120, 0.35);
+    border-color: rgba(100, 100, 200, 0.5);
+    color: #aaaaee;
+    transform: scale(1.02);
+}
+
+.import-icon {
+    font-size: 2.5rem;
+}
+
+.import-progress {
+    text-align: center;
+    padding: 2rem;
+}
+
+.import-progress-icon {
+    font-size: 2rem;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.import-progress-text {
+    color: #aaa;
+    margin: 0.8rem 0;
+}
+
+.progress-bar {
+    width: 250px;
+    height: 6px;
+    background: rgba(100, 100, 250, 0.3);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 0 auto;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4040cc, #6060ee);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.progress-percent {
+    color: #7777bb;
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+}
+
+/* Playback Controls */
+.playback-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.8rem;
+    background: rgba(20, 20, 40, 0.95);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    gap: 1rem;
+    position: relative;
+    z-index: 20;
+}
+
+.controls-left,
+.controls-right {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.controls-center {
+    flex: 1;
+    text-align: center;
+}
+
+.ctrl-btn {
+    background: none;
+    border: none;
+    color: #aaa;
+    font-size: 0.95rem;
+    padding: 0.35rem 0.5rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 32px;
+}
+
+.ctrl-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.ctrl-btn--play {
+    font-size: 1.3rem;
+    width: 40px;
+    height: 40px;
+}
+
+.time-display {
+    font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.85rem;
+    color: #99aacc;
+    letter-spacing: 0.02em;
+}
+
+.volume-control {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-left: 0.5rem;
+}
+
+.volume-icon {
+    font-size: 0.85rem;
+}
+
+.volume-slider {
+    width: 70px;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+    outline: none;
+}
+
+.volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #6666cc;
+    cursor: pointer;
+}
+
+/* Video Error Overlay */
+.video-error-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(200, 50, 50, 0.85);
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    text-align: center;
+    z-index: 10;
+    max-width: 80%;
+    pointer-events: none;
+}
+
+.video-error-overlay p {
+    margin: 0.3rem 0;
+    color: #fff;
+    font-size: 0.9rem;
+}
+
+.video-error-overlay .error-url {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.7);
+    word-break: break-all;
+    font-family: 'SF Mono', monospace;
+}
+
+.video-toast {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.75);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    pointer-events: none;
+    z-index: 50;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    animation: fadeInOut 3s forwards;
+}
+
+@keyframes fadeInOut {
+    0% {
+        opacity: 0;
+        transform: translate(-50%, -40%);
+    }
+
+    10% {
+        opacity: 1;
+        transform: translate(-50%, -50%);
+    }
+
+    90% {
+        opacity: 1;
+        transform: translate(-50%, -50%);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -60%);
+    }
+}
+
+.clip-mode-bar {
+    position: absolute;
+    bottom: 50px;
+    left: 2%;
+    right: 2%;
+    background: rgba(30, 30, 45, 0.95);
+    border: 1px solid rgba(100, 100, 250, 0.3);
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(10px);
+}
+
+.clip-mode-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #ffd700;
+}
+
+.clip-mode-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.clip-mode-handles {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.5rem;
+    border-radius: 6px;
+}
+
+.clip-handle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.clip-handle label {
+    font-size: 0.85rem;
+    color: #ccc;
+    font-family: monospace;
+}
+
+.clip-handle button {
+    background: rgba(100, 100, 200, 0.2);
+    border: 1px solid rgba(100, 100, 200, 0.4);
+    color: #fff;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.clip-handle button:hover {
+    background: rgba(100, 100, 200, 0.4);
+}
+
+.clip-duration {
+    font-size: 0.8rem;
+    color: #888;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.2rem 0.6rem;
+    border-radius: 12px;
+}

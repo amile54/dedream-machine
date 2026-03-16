@@ -1,0 +1,195 @@
+.segment-list {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #10101e;
+    overflow: hidden;
+}
+
+.segment-list--empty {
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2rem;
+}
+
+.empty-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.5;
+}
+
+.empty-text {
+    color: #666;
+    margin: 0;
+}
+
+.empty-hint {
+    color: #444;
+    font-size: 0.8rem;
+    margin: 0.3rem 0 0;
+}
+
+.segment-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 0.8rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    flex-shrink: 0;
+}
+
+.segment-list-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #aaaa cc;
+    margin: 0;
+}
+
+.segment-count {
+    font-size: 0.75rem;
+    color: #666688;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.15rem 0.5rem;
+    border-radius: 10px;
+}
+
+.segment-cards {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.segment-cards::-webkit-scrollbar {
+    width: 5px;
+}
+
+.segment-cards::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.segment-cards::-webkit-scrollbar-thumb {
+    background: rgba(100, 100, 200, 0.2);
+    border-radius: 3px;
+}
+
+.segment-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 0.6rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.segment-card:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(100, 100, 200, 0.2);
+}
+
+.segment-card--selected {
+    background: rgba(80, 80, 200, 0.12);
+    border-color: rgba(100, 100, 200, 0.4);
+    box-shadow: 0 0 12px rgba(80, 80, 200, 0.15);
+}
+
+.segment-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+
+.segment-index {
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: #8080cc;
+    min-width: 28px;
+}
+
+.segment-time {
+    font-size: 0.7rem;
+    color: #888;
+    font-family: 'SF Mono', 'JetBrains Mono', monospace;
+    flex: 1;
+}
+
+.segment-duration {
+    font-size: 0.65rem;
+    color: #555;
+    font-family: 'SF Mono', monospace;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+}
+
+.segment-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.segment-description {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    color: #ccc;
+    font-size: 0.8rem;
+    padding: 0.35rem 0.5rem;
+    resize: vertical;
+    font-family: inherit;
+    line-height: 1.4;
+    min-height: 2rem;
+}
+
+.segment-description::placeholder {
+    color: #555;
+}
+
+.segment-description:focus {
+    outline: none;
+    border-color: rgba(100, 100, 200, 0.4);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.segment-category-row {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.segment-category {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    color: #aaa;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.4rem;
+    cursor: pointer;
+}
+
+.segment-category:focus {
+    outline: none;
+    border-color: rgba(100, 100, 200, 0.4);
+}
+
+.remove-cut-btn {
+    background: none;
+    border: none;
+    font-size: 0.8rem;
+    cursor: pointer;
+    padding: 0.2rem;
+    opacity: 0.4;
+    transition: opacity 0.2s;
+    border-radius: 4px;
+}
+
+.remove-cut-btn:hover {
+    opacity: 1;
+    background: rgba(255, 80, 80, 0.15);
+}

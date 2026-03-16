@@ -1,0 +1,423 @@
+import React, { useRef, useEffect, useCallback, useState } from 'react';
+import { useVideoStore } from '../../stores/videoStore';
+import { useProjectStore } from '../../stores/projectStore';
+import { formatTime } from '../../utils/timeFormat';
+import { open } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
+import { smartImport, takeScreenshot } from '../../services/ffmpegService';
+import { AssetSelectModal } from '../assets/AssetSelectModal';
+import type { Asset } from '../../types';
+import './VideoPlayer.css';
+
+export const VideoPlayer: React.FC = () => {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const workspace = useProjectStore(s => s.workspace);
+    const project = useProjectStore(s => s.project);
+    const createNewProject = useProjectStore(s => s.createNewProject);
+    const setProxyFilePath = useProjectStore(s => s.setProxyFilePath);
+    const addCutPoint = useProjectStore(s => s.addCutPoint);
+    const saveProject = useProjectStore(s => s.saveProject);
+
+    const {
+        isPlaying,
+        currentTime,
+        duration,
+        volume,
+        proxyUrl,
+        setVideoRef,
+        setPlaying,
+        setCurrentTime,
+        setDuration,
+        setFps,
+        setVolume,
+        setProxyUrl,
+        setOriginalVideoPath,
+        stepFrame,
+        skipSeconds,
+    } = useVideoStore();
+
+    const [importProgress, setImportProgress] = useState<number | null>(null);
+    const [importStatus, setImportStatus] = useState<string>('');
+    const [isImporting, setIsImporting] = useState(false);
+    const [videoError, setVideoError] = useState<string | null>(null);
+
+    // Media extraction state
+    const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
+    const [modalMode, setModalMode] = useState<'screenshot' | 'clip'>('screenshot');
+    const [isClippingMode, setIsClippingMode] = useState(false);
+    const [clipStartTime, setClipStartTime] = useState(0);
+    const [clipEndTime, setClipEndTime] = useState(0);
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+    const showToast = (msg: string) => {
+        setToastMessage(msg);
+        setTimeout(() => setToastMessage(null), 3000);
+    };
+
+    // Use a callback ref to guarantee the global store receives the `<video>` node  
+    // the exact moment React mounts it to the DOM.
+    const videoRefCallback = useCallback((node: HTMLVideoElement | null) => {
+        videoRef.current = node;
+        setVideoRef(node);
+    }, [setVideoRef]);
+
+    // Load proxy if project already has one
+    useEffect(() => {
+        if (project?.proxyFilePath && !proxyUrl) {
+            const loadVideo = async () => {
+                try {
+                    const path = project.proxyFilePath;
+                    const url = await invoke<string>('get_stream_url', { filePath: path });
+                    console.log('[VideoPlayer] Loading existing video via streaming server:', path, '-> URL:', url);
+                    setProxyUrl(url);
+                    setOriginalVideoPath(project.videoFilePath);
+                } catch (err) {
+                    console.error('[VideoPlayer] Failed to get video URL:', err);
+                }
+            };
+            loadVideo();
+        }
+    }, [project, proxyUrl, setProxyUrl, setOriginalVideoPath]);
+
+    const handleTimeUpdate = useCallback(() => {
+        if (videoRef.current) {
+            setCurrentTime(videoRef.current.currentTime);
+        }
+    }, [setCurrentTime]);
+
+    const handleLoadedMetadata = useCallback(() => {
+        if (videoRef.current) {
+            setDuration(videoRef.current.duration);
+            setVideoError(null); // Clear any previous error
+            console.log('[VideoPlayer] Video loaded, duration:', videoRef.current.duration);
+        }
+    }, [setDuration]);
+
+    const handlePlay = useCallback(() => setPlaying(true), [setPlaying]);
+    const handlePause = useCallback(() => setPlaying(false), [setPlaying]);
+
+    // Override togglePlay locally to catch promise rejections
+    const handleTogglePlay = useCallback(async () => {
+        if (!videoRef.current) {
+            console.error('[VideoPlayer] togglePlay failed: videoRef is null');
+            return;
+        }
+
+        try {
+            if (isPlaying) {
+                videoRef.current.pause();
+                setPlaying(false);
+            } else {
+                console.log('[VideoPlayer] Attempting to play...', proxyUrl);
+                await videoRef.current.play();
+                setPlaying(true);
+            }
+        } catch (err: any) {
+            console.error('[VideoPlayer] play() rejected:', err);
+            setVideoError(`播放失败: ${err.name} - ${err.message} `);
+        }
+    }, [isPlaying, proxyUrl, setPlaying]);
+
+    const handleImportVideo = async () => {
+        if (!workspace) return;
+
+        const file = await open({
+            multiple: false,
+            title: '导入视频文件',
+            filters: [
+                {
+                    name: '视频文件',
+                    extensions: ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'm4v'],
+                },
+            ],
+        });
+
+        if (!file) return;
+
+        const videoPath = file as string;
+        setIsImporting(true);
+        setImportProgress(0);
+        setImportStatus('正在分析视频...');
+        setVideoError(null);
+
+        try {
+            // Smart import: decides whether to play directly or remux
+            const { playablePath, info, strategy } = await smartImport(
+                videoPath,
+                workspace,
+                (percent, status) => {
+                    setImportProgress(percent);
+                    setImportStatus(status);
+                },
+            );
+
+            setFps(info.fps);
+
+            console.log('[VideoPlayer] Import complete:', {
+                strategy,
+                codec: info.videoCodec,
+                container: info.container,
+                duration: info.duration,
+                resolution: `${info.width}x${info.height} `,
+                playablePath,
+            });
+
+            // Create project
+            createNewProject(videoPath);
+            setProxyFilePath(playablePath);
+            setOriginalVideoPath(videoPath);
+
+            // Get the video URL via Tauri proxy server (supports Range requests & bypasses WebKit limitations)
+            const url = await invoke<string>('get_stream_url', { filePath: playablePath });
+            console.log('[VideoPlayer] Setting video URL via streaming server:', url);
+            setProxyUrl(url);
+
+            // Initialize segments with full duration
+            const store = useProjectStore.getState();
+            if (store.project) {
+                store.project.segments = [{
+                    id: crypto.randomUUID(),
+                    index: 1,
+                    startTime: 0,
+                    endTime: info.duration,
+                    description: '',
+                    category: '',
+                }];
+            }
+
+            await saveProject();
+        } catch (err) {
+            console.error('Import failed:', err);
+            alert(`导入视频失败: ${err} `);
+        } finally {
+            setIsImporting(false);
+            setImportProgress(null);
+            setImportStatus('');
+        }
+    };
+
+    const handleScreenshotClick = () => {
+        if (!workspace || !project?.videoFilePath) return;
+        setModalMode('screenshot');
+        setIsAssetModalOpen(true);
+    };
+
+    const handleClipClick = () => {
+        if (!workspace || !project?.videoFilePath) return;
+        setIsClippingMode(true);
+        setClipStartTime(currentTime);
+        setClipEndTime(Math.min(currentTime + 5, duration));
+    };
+
+    const handleAssetConfirm = async (asset: Asset, options?: { isAudio?: boolean }) => {
+        setIsAssetModalOpen(false);
+        if (!workspace || !project?.videoFilePath) return;
+
+        try {
+            if (modalMode === 'screenshot') {
+                const timestamp = currentTime;
+                // Generate clean filename
+                const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
+                const filename = `${asset.name}_${dateStr}.png`;
+                const outputPath = `${workspace}/assets/${asset.category}/${asset.name}/${filename}`;
+
+                await takeScreenshot(project.videoFilePath, timestamp, outputPath);
+                showToast(`提取成功！截图已保存至 ${asset.name} 资产`);
+            } else if (modalMode === 'clip') {
+                setIsClippingMode(false);
+                const isAudio = options?.isAudio;
+                const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
+                const ext = isAudio ? 'mp3' : 'mp4';
+                const filename = `${asset.name}_${isAudio ? 'audio' : 'clip'}_${dateStr}.${ext}`;
+                const outputPath = `${workspace}/assets/${asset.category}/${asset.name}/${filename}`;
+
+                const { invoke } = await import('@tauri-apps/api/core');
+                await invoke('ensure_workspace_dirs', { workspace }); // optional safety
+
+                const { exportClip } = await import('../../services/ffmpegService');
+
+                showToast(`正在提取片段...请稍候`);
+                await exportClip(project.videoFilePath, clipStartTime, clipEndTime, outputPath, isAudio);
+
+                showToast(`提取成功！${isAudio ? '音频' : '视频'}已保存至 ${asset.name} 资产`);
+            }
+        } catch (err) {
+            console.error('Media extraction failed:', err);
+            setVideoError(`导出失败: ${err}`);
+        }
+    };
+
+    const handleVideoError = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+        const video = e.currentTarget;
+        const err = video.error;
+        const errMsg = err?.message || '未知错误';
+        const errCode = err?.code || 0;
+        console.error('[VideoPlayer] Video error:', errCode, errMsg, 'src:', proxyUrl);
+        setVideoError(`播放错误(${errCode}): ${errMsg} `);
+    }, [proxyUrl]);
+
+    // Show import UI if no video loaded
+    if (!proxyUrl) {
+        return (
+            <div className="video-player video-player--empty">
+                {isImporting ? (
+                    <div className="import-progress">
+                        <div className="import-progress-icon">⏳</div>
+                        <p className="import-progress-text">{importStatus || '处理中...'}</p>
+                        <div className="progress-bar">
+                            <div
+                                className="progress-bar-fill"
+                                style={{ width: `${importProgress || 0}% ` }}
+                            />
+                        </div>
+                        <p className="progress-percent">{importProgress || 0}%</p>
+                    </div>
+                ) : (
+                    <button className="import-button" onClick={handleImportVideo}>
+                        <span className="import-icon">🎥</span>
+                        <span>导入视频文件</span>
+                    </button>
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <div className="video-player">
+            <div className="video-container">
+                {videoError && (
+                    <div className="video-error-overlay">
+                        <p>⚠️ {videoError}</p>
+                        <p className="error-url">路径: {proxyUrl}</p>
+                    </div>
+                )}
+                <video
+                    key={proxyUrl}
+                    ref={videoRefCallback}
+                    src={proxyUrl}
+                    preload="auto"
+                    playsInline
+                    onTimeUpdate={handleTimeUpdate}
+                    onLoadedMetadata={handleLoadedMetadata}
+                    onPlay={handlePlay}
+                    onPause={handlePause}
+                    onClick={handleTogglePlay}
+                    onError={handleVideoError}
+                    onCanPlay={() => {
+                        console.log('[VideoPlayer] Video can play');
+                        setVideoError(null);
+                    }}
+                />
+            </div>
+
+            {toastMessage && (
+                <div className="video-toast">
+                    {toastMessage}
+                </div>
+            )}
+
+            {isAssetModalOpen && (
+                <AssetSelectModal
+                    isOpen={isAssetModalOpen}
+                    onClose={() => setIsAssetModalOpen(false)}
+                    onConfirm={handleAssetConfirm}
+                    title={modalMode === 'screenshot' ? "保存截图至资产" : "保存截取片段至资产"}
+                    modalMode={modalMode}
+                />
+            )}
+
+            {isClippingMode && (
+                <div className="clip-mode-bar">
+                    <div className="clip-mode-header">
+                        <span>🎬 视频截取模式</span>
+                        <div className="clip-mode-actions">
+                            <button className="btn-cancel" onClick={() => setIsClippingMode(false)}>取消</button>
+                            <button
+                                className="btn-primary"
+                                onClick={() => {
+                                    setModalMode('clip');
+                                    setIsAssetModalOpen(true);
+                                }}
+                            >
+                                确认截取并选择资产
+                            </button>
+                        </div>
+                    </div>
+                    <div className="clip-mode-handles">
+                        <div className="clip-handle">
+                            <label>起点 (In): {formatTime(clipStartTime, true)}</label>
+                            <button onClick={() => setClipStartTime(currentTime)}>
+                                设为当前时间
+                            </button>
+                        </div>
+                        <div className="clip-duration">
+                            时长: {formatTime(Math.max(0, clipEndTime - clipStartTime), true)}
+                        </div>
+                        <div className="clip-handle">
+                            <label>终点 (Out): {formatTime(clipEndTime, true)}</label>
+                            <button onClick={() => setClipEndTime(currentTime)}>
+                                设为当前时间
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="playback-controls">
+                <div className="controls-left">
+                    <button className="ctrl-btn" onClick={() => skipSeconds(-5)} title="后退5秒 (J)">
+                        ⏪
+                    </button>
+                    <button className="ctrl-btn" onClick={() => stepFrame(-1)} title="上一帧 (←)">
+                        ◀
+                    </button>
+                    <button className="ctrl-btn ctrl-btn--play" onClick={handleTogglePlay} title="播放/暂停 (Space)">
+                        {isPlaying ? '⏸' : '▶'}
+                    </button>
+                    <button className="ctrl-btn" onClick={() => stepFrame(1)} title="下一帧 (→)">
+                        ▶
+                    </button>
+                    <button className="ctrl-btn" onClick={() => skipSeconds(5)} title="前进5秒 (L)">
+                        ⏩
+                    </button>
+                </div>
+
+                <div className="controls-center">
+                    <span className="time-display">
+                        {formatTime(currentTime, true)} / {formatTime(duration)}
+                    </span>
+                </div>
+
+                <div className="controls-right">
+                    <button
+                        className="ctrl-btn"
+                        onClick={() => {
+                            if (duration > 0) addCutPoint(currentTime);
+                        }}
+                        title="添加切点 (B) &#10;注：切分发生在此刻画面之前"
+                    >
+                        ✂️
+                    </button>
+                    <button className="ctrl-btn" onClick={handleScreenshotClick} title="截图至资产 (Cmd+Shift+S)">
+                        📸
+                    </button>
+                    <button className="ctrl-btn" onClick={handleClipClick} title="视频片段截取">
+                        🎞️
+                    </button>
+                    <div className="volume-control">
+                        <span className="volume-icon">🔊</span>
+                        <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.05"
+                            value={volume}
+                            onChange={(e) => setVolume(parseFloat(e.target.value))}
+                            className="volume-slider"
+                        />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};

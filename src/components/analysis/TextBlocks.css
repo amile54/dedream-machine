@@ -1,0 +1,240 @@
+.text-blocks {
+    background: #10101e;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.text-blocks-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.8rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    flex-shrink: 0;
+}
+
+.text-blocks-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #aaaace;
+    margin: 0;
+}
+
+.add-block-btn {
+    background: rgba(80, 80, 200, 0.15);
+    border: 1px solid rgba(80, 80, 200, 0.3);
+    border-radius: 6px;
+    color: #8888cc;
+    font-size: 0.78rem;
+    padding: 0.25rem 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.add-block-btn:hover {
+    background: rgba(80, 80, 200, 0.25);
+    color: #aaaaee;
+}
+
+/* Fixed-position dropdown menu (not affected by parent overflow) */
+.add-block-menu-fixed {
+    background: #1a1a2e;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    padding: 0.3rem;
+    z-index: 10000;
+    min-width: 130px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.add-block-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: #bbb;
+    font-size: 0.8rem;
+    padding: 0.5rem 0.7rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.add-block-menu-item:hover {
+    background: rgba(80, 80, 200, 0.2);
+    color: #fff;
+}
+
+.text-blocks-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.text-blocks-empty p {
+    color: #555;
+    font-size: 0.85rem;
+    margin: 0;
+}
+
+.text-blocks-empty .empty-subtitle {
+    font-size: 0.75rem;
+    color: #444;
+    margin-top: 0.3rem;
+}
+
+.text-blocks-list {
+    flex: 1;
+    min-height: 0;
+    max-height: 100%;
+    overflow-y: auto !important;
+    padding: 0.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.text-blocks-list::-webkit-scrollbar {
+    width: 5px;
+}
+
+.text-blocks-list::-webkit-scrollbar-thumb {
+    background: rgba(100, 100, 200, 0.2);
+    border-radius: 3px;
+}
+
+.text-block {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: all 0.2s;
+}
+
+.text-block:hover {
+    border-color: rgba(100, 100, 200, 0.2);
+}
+
+.text-block--expanded {
+    border-color: rgba(100, 100, 200, 0.3);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.text-block-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.6rem;
+}
+
+.text-block-expand-btn {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    transition: background 0.2s, color 0.2s;
+}
+
+.text-block-expand-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.chevron-icon {
+    width: 16px;
+    height: 16px;
+    transition: transform 0.2s ease;
+}
+
+.chevron-icon.expanded {
+    transform: rotate(90deg);
+}
+
+.text-block-type-badge {
+    font-size: 0.65rem;
+    color: #8888cc;
+    background: rgba(80, 80, 200, 0.15);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.text-block-title-input {
+    flex: 1;
+    background: none;
+    border: none;
+    color: #ccc;
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 0;
+    outline: none;
+}
+
+.text-block-title-input:focus {
+    color: #fff;
+}
+
+.text-block-remove {
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 0.8rem;
+    cursor: pointer;
+    padding: 0.15rem 0.3rem;
+    border-radius: 4px;
+    opacity: 0;
+    transition: all 0.2s;
+}
+
+.text-block-header:hover .text-block-remove {
+    opacity: 1;
+}
+
+.text-block-remove:hover {
+    color: #ff6666;
+    background: rgba(255, 80, 80, 0.1);
+}
+
+.text-block-body {
+    padding: 0 0.6rem 0.6rem;
+}
+
+.text-block-content {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    color: #ccc;
+    font-size: 0.82rem;
+    padding: 0.5rem;
+    resize: vertical;
+    font-family: inherit;
+    line-height: 1.5;
+    min-height: 100px;
+}
+
+.text-block-content::placeholder {
+    color: #555;
+}
+
+.text-block-content:focus {
+    outline: none;
+    border-color: rgba(100, 100, 200, 0.4);
+    background: rgba(255, 255, 255, 0.06);
+}

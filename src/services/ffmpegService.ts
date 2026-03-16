@@ -1,0 +1,235 @@
+import { Command } from '@tauri-apps/plugin-shell';
+import { mkdir } from '@tauri-apps/plugin-fs';
+
+export interface VideoInfo {
+    duration: number;
+    fps: number;
+    width: number;
+    height: number;
+    videoCodec: string;
+    audioCodec: string;
+    container: string;  // 'mp4', 'mkv', 'avi', etc.
+    bitrate: number;
+}
+
+/**
+ * Run FFprobe to get detailed video metadata
+ */
+export async function getVideoInfo(videoPath: string): Promise<VideoInfo> {
+    const cmd = Command.sidecar('bin/ffprobe', [
+        '-v', 'quiet',
+        '-print_format', 'json',
+        '-show_format',
+        '-show_streams',
+        videoPath,
+    ]);
+
+    const output = await cmd.execute();
+    if (output.code !== 0) {
+        throw new Error(`FFprobe failed: ${output.stderr}`);
+    }
+
+    const info = JSON.parse(output.stdout);
+    const videoStream = info.streams?.find((s: any) => s.codec_type === 'video');
+    const audioStream = info.streams?.find((s: any) => s.codec_type === 'audio');
+
+    let fps = 24;
+    if (videoStream?.r_frame_rate) {
+        const [num, den] = videoStream.r_frame_rate.split('/').map(Number);
+        if (den > 0) fps = num / den;
+    }
+
+    // Get container format
+    const formatName = (info.format?.format_name || '').toLowerCase();
+    let container = 'unknown';
+    if (formatName.includes('mp4') || formatName.includes('mov')) container = 'mp4';
+    else if (formatName.includes('matroska') || formatName.includes('webm')) container = 'mkv';
+    else if (formatName.includes('avi')) container = 'avi';
+    else container = formatName.split(',')[0];
+
+    return {
+        duration: parseFloat(info.format?.duration || '0'),
+        fps: Math.round(fps * 100) / 100,
+        width: videoStream?.width || 0,
+        height: videoStream?.height || 0,
+        videoCodec: (videoStream?.codec_name || '').toLowerCase(),
+        audioCodec: (audioStream?.codec_name || '').toLowerCase(),
+        container,
+        bitrate: parseInt(info.format?.bit_rate || '0', 10),
+    };
+}
+
+/**
+ * Smart import: Generates a standard 720p edit proxy for guaranteed WebKit compatibility.
+ * 
+ * Philosophy: Proxy-First approach.
+ * WebKit is extremely strict about codecs. Trying to "direct play" user files 
+ * (like MP4 with AC3 audio or 10-bit color) results in black screens.
+ * Therefore, we ALWAYS generate a standard 720p H.264/AAC proxy file.
+ * We use macOS hardware acceleration (h264_videotoolbox) to make this as fast as possible.
+ */
+export async function smartImport(
+    inputPath: string,
+    workspacePath: string,
+    onProgress?: (percent: number, status: string) => void,
+): Promise<{ playablePath: string; info: VideoInfo; strategy: string }> {
+    onProgress?.(0, '正在分析视频...');
+    const info = await getVideoInfo(inputPath);
+
+    const proxyPath = `${workspacePath}/proxy.mp4`;
+    const encoder = await detectHWEncoder();
+    const isHW = encoder !== 'libx264';
+    const strategy = `生成标准化剪辑代理 (${isHW ? '硬件加速' : '软件编码'})`;
+
+    onProgress?.(5, strategy);
+    console.log('[smartImport] Video info:', info);
+
+    const args: string[] = [
+        '-v', 'warning',
+        '-y',
+        '-i', inputPath
+    ];
+
+    if (encoder === 'h264_videotoolbox') {
+        args.push('-c:v', 'h264_videotoolbox', '-b:v', '4000k', '-vf', 'scale=-2:720');
+    } else if (encoder === 'h264_nvenc') {
+        args.push('-c:v', 'h264_nvenc', '-preset', 'p4', '-b:v', '4000k', '-vf', 'scale=-2:720');
+    } else if (encoder === 'h264_qsv') {
+        args.push('-c:v', 'h264_qsv', '-preset', 'fast', '-b:v', '4000k', '-vf', 'scale=-2:720');
+    } else {
+        args.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '26', '-vf', 'scale=-2:720');
+    }
+
+    // Standardize audio and container formats for WebKit
+    args.push(
+        '-c:a', 'aac',
+        '-ac', '2',
+        '-b:a', '192k',
+        '-pix_fmt', 'yuv420p',
+        '-movflags', '+faststart',
+        '-progress', 'pipe:1',
+        proxyPath
+    );
+
+    const cmd = Command.sidecar('bin/ffmpeg', args);
+    await executeWithProgress(cmd, info.duration, onProgress, '代理生成中...');
+    onProgress?.(100, '导入完成');
+
+    return { playablePath: proxyPath, info, strategy };
+}
+
+/**
+ * Detect hardware encoder
+ */
+async function detectHWEncoder(): Promise<string> {
+    try {
+        const cmd = Command.sidecar('bin/ffmpeg', ['-hide_banner', '-encoders']);
+        const output = await cmd.execute();
+        if (output.stdout.includes('h264_videotoolbox')) return 'h264_videotoolbox';
+        if (output.stdout.includes('h264_nvenc')) return 'h264_nvenc';
+        if (output.stdout.includes('h264_qsv')) return 'h264_qsv';
+    } catch { /* ignore */ }
+    return 'libx264';
+}
+
+/**
+ * Execute FFmpeg with progress reporting
+ */
+function executeWithProgress(
+    cmd: ReturnType<typeof Command.sidecar>,
+    duration: number,
+    onProgress?: (percent: number, status: string) => void,
+    statusMessage = '处理中...',
+): Promise<void> {
+    return new Promise((resolve, reject) => {
+        let lastPercent = 5;
+
+        cmd.on('close', (data) => {
+            if (data.code === 0) resolve();
+            else reject(new Error(`FFmpeg failed with code ${data.code}`));
+        });
+
+        cmd.on('error', (err) => reject(new Error(`FFmpeg error: ${err}`)));
+
+        cmd.stdout.on('data', (line: string) => {
+            const timeMatch = line.match(/out_time_ms=(\d+)/);
+            if (timeMatch && duration > 0) {
+                const currentSeconds = parseInt(timeMatch[1]) / 1000000;
+                const percent = Math.min(95, Math.max(lastPercent, Math.round((currentSeconds / duration) * 100)));
+                if (percent > lastPercent) {
+                    lastPercent = percent;
+                    onProgress?.(percent, statusMessage);
+                }
+            }
+        });
+
+        cmd.spawn().catch(reject);
+    });
+}
+
+// --- Utility exports (screenshots, clips, thumbnails) ---
+
+async function ensureDirForFile(filePath: string) {
+    const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+    try {
+        await mkdir(dir, { recursive: true });
+    } catch (err) {
+        console.warn('mkdir failed or exists:', err);
+    }
+}
+
+export async function takeScreenshot(
+    inputPath: string,
+    timestamp: number,
+    outputPath: string
+): Promise<void> {
+    await ensureDirForFile(outputPath);
+    const cmd = Command.sidecar('bin/ffmpeg', [
+        '-ss', timestamp.toString(),
+        '-i', inputPath,
+        '-frames:v', '1',
+        '-q:v', '2',
+        '-y',
+        outputPath,
+    ]);
+    const output = await cmd.execute();
+    if (output.code !== 0) throw new Error(`Screenshot failed: ${output.stderr}`);
+}
+
+export async function exportClip(
+    inputPath: string,
+    startTime: number,
+    endTime: number,
+    outputPath: string,
+    isAudio?: boolean
+): Promise<void> {
+    await ensureDirForFile(outputPath);
+
+    // Default to strict video copy
+    let ffmpegArgs = [
+        '-ss', startTime.toString(),
+        '-to', endTime.toString(),
+        '-i', inputPath,
+        '-c', 'copy',
+        '-y',
+        outputPath,
+    ];
+
+    if (isAudio) {
+        // Extract high-quality audio only
+        ffmpegArgs = [
+            '-ss', startTime.toString(),
+            '-to', endTime.toString(),
+            '-i', inputPath,
+            '-q:a', '0',
+            '-map', 'a',
+            '-vn',
+            '-y',
+            outputPath,
+        ];
+    }
+
+    const cmd = Command.sidecar('bin/ffmpeg', ffmpegArgs);
+    const output = await cmd.execute();
+    if (output.code !== 0) throw new Error(`Clip export failed: ${output.stderr}`);
+}
