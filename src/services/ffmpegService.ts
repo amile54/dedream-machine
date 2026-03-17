@@ -13,6 +13,71 @@ export interface VideoInfo {
     bitrate: number;
 }
 
+export interface SubtitleTrackInfo {
+    index: number;       // stream index in the container
+    codec: string;       // e.g. 'subrip', 'ass', 'mov_text'
+    language: string;    // e.g. 'chi', 'eng'
+    title: string;       // e.g. '中文（简体）'
+}
+
+/**
+ * Detect embedded subtitle tracks in a video file using FFprobe
+ */
+export async function getSubtitleTracks(videoPath: string): Promise<SubtitleTrackInfo[]> {
+    const cmd = Command.sidecar('bin/ffprobe', [
+        '-v', 'quiet',
+        '-print_format', 'json',
+        '-show_streams',
+        '-select_streams', 's',
+        videoPath,
+    ]);
+
+    const output = await cmd.execute();
+    if (output.code !== 0) {
+        console.warn('[ffprobe] No subtitle streams or error:', output.stderr);
+        return [];
+    }
+
+    try {
+        const info = JSON.parse(output.stdout);
+        const streams = info.streams || [];
+        return streams.map((s: any) => ({
+            index: s.index,
+            codec: s.codec_name || 'unknown',
+            language: s.tags?.language || '',
+            title: s.tags?.title || `Track ${s.index}`,
+        }));
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Extract an embedded subtitle track to SRT format using FFmpeg
+ */
+export async function extractSubtitleTrack(videoPath: string, streamIndex: number): Promise<string> {
+    // Write to a temp file
+    const tmpPath = `/tmp/dedream_sub_${streamIndex}_${Date.now()}.srt`;
+
+    const cmd = Command.sidecar('bin/ffmpeg', [
+        '-v', 'warning',
+        '-y',
+        '-i', videoPath,
+        '-map', `0:${streamIndex}`,
+        '-c:s', 'srt',
+        tmpPath,
+    ]);
+
+    const output = await cmd.execute();
+    if (output.code !== 0) {
+        throw new Error(`Failed to extract subtitle track ${streamIndex}: ${output.stderr}`);
+    }
+
+    // Read the extracted SRT content
+    const { readTextFile } = await import('@tauri-apps/plugin-fs');
+    return await readTextFile(tmpPath);
+}
+
 /**
  * Run FFprobe to get detailed video metadata
  */
