@@ -320,9 +320,10 @@ export const VideoPlayer: React.FC = () => {
         <div className="video-player">
             <div className="video-container">
                 {videoError && (
-                    <div className="video-error-overlay">
+                    <div className="video-error-overlay" onClick={(e) => { e.stopPropagation(); setVideoError(null); }} style={{ cursor: 'pointer', zIndex: 50 }}>
                         <p>⚠️ {videoError}</p>
                         <p className="error-url">路径: {proxyUrl}</p>
+                        <p style={{ fontSize: '0.75rem', color: '#aaa', marginTop: '8px' }}>点击关闭</p>
                     </div>
                 )}
                 <video
