@@ -486,6 +486,7 @@ export const VideoPlayer: React.FC = () => {
                                 />
                                 <div style={{
                                     position: 'fixed',
+                                    top: '48px',
                                     bottom: btnRect ? (window.innerHeight - btnRect.top + 6) : 60,
                                     right: btnRect ? (window.innerWidth - btnRect.right) : 16,
                                     background: '#1a1a2e',
@@ -494,7 +495,8 @@ export const VideoPlayer: React.FC = () => {
                                     padding: '4px',
                                     minWidth: '200px',
                                     maxWidth: '320px',
-                                    maxHeight: '60vh',
+                                    height: 'fit-content',
+                                    maxHeight: `calc(100vh - ${btnRect ? (window.innerHeight - btnRect.top + 6) : 60}px - 48px)`,
                                     overflowY: 'auto',
                                     zIndex: 9999,
                                     boxShadow: '0 8px 24px rgba(0,0,0,0.6)',

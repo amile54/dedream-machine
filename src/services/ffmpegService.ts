@@ -295,6 +295,7 @@ export async function exportClip(
 
     // Default to strict video copy
     let ffmpegArgs = [
+        '-v', 'warning',
         '-ss', startTime.toString(),
         '-to', endTime.toString(),
         '-i', inputPath,
@@ -304,14 +305,15 @@ export async function exportClip(
     ];
 
     if (isAudio) {
-        // Extract high-quality audio only
+        // Extract high-quality audio only (first audio stream)
         ffmpegArgs = [
+            '-v', 'warning',
             '-ss', startTime.toString(),
             '-to', endTime.toString(),
             '-i', inputPath,
-            '-q:a', '0',
-            '-map', 'a',
+            '-map', '0:a:0',
             '-vn',
+            '-b:a', '192k',
             '-y',
             outputPath,
         ];
