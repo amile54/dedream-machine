@@ -71,3 +71,41 @@
 - **纯粹的文件系统驱动**：所有的状态都实时落盘到工作目录下的 `project.json` 中，随时拷贝工作目录给别人，重新在 App 里 Open 就能实现进度 100% 还原。
 - **Rust 原生 ZIP 打包解法 (`.zip`)**：交付时最大的麻烦就是动辄几十个 GB 的代理源视频。为了解决这个问题，我们废弃了不安全的 JS Shell 复制，直接在 `src-tauri/src/lib.rs` 中手写了一套完整的递归式 ZIP 压缩系统。
 - **一键脱水**：用户点击「📦 导出打包」后，Rust 后端会瞬间将体积小巧的 `project.json` 及抽取的各种人物、道具图片资产 (`assets/`) 压制成一个单独的 `.zip` 压缩包（自动跳过代理视频），实现毫秒级发给同事。
+
+---
+
+## 6. Phase 7: 功能修复与增强 (2026-03-17)
+
+本轮聚焦于 UI 稳健性、数据完整性和新功能支持。
+
+### 1. 面板级滚动条 (Industry-Standard Panel Scrolling)
+- 遵循 Premiere/Resolve/Blender 的标准范式：每个面板 = 独立滚动视口
+- 核心 CSS 修复：`min-height: 0` + `flex-shrink: 0`，杜绝内容重叠和挤压
+- 涉及：`TextBlocks.css`、`AssetSidebar.css`、`SegmentList.css`、`MainLayout.css`
+
+### 2. 时间轴滚动条冲突修复
+- Canvas `onPointerDown` 增加 Y 坐标检测，当点击落在容器底部 16px（浏览器原生滚动条区域）时跳过，不再抢夺滚动事件
+
+### 3. 外挂 + 内嵌字幕支持
+- 新建 `subtitleParser.ts`：完整的 SRT 格式解析器
+- 新增 `getSubtitleTracks()`：使用 ffprobe `-select_streams s` 探测所有内嵌字幕流
+- 新增 `extractSubtitleTrack()`：使用 ffmpeg `-map 0:N -c:s srt` 提取指定字幕轨到临时文件
+- 播放控件栏新增 **CC 按钮**，点击弹出 fixed 定位浮层面板（`max-height: 60vh` + 滚动 + click-outside 关闭），列出外挂加载入口和所有内嵌字幕轨
+- 视频区域底部新增字幕叠加层，根据当前播放时间实时匹配 Cue 并渲染
+
+### 4. 文件命名
+- `AssetSelectModal` 新增「文件名」输入框，预填默认名称（如 `clip_20260317`），用户可自由修改
+
+### 5. 数据模型完善 (project.json)
+- **Rust 后端**：`Project` 结构体新增了 `metadata: Option<Metadata>` 和 `assets: Vec<Asset>`，`Asset` 新增 `files: Vec<AssetFile>` 记录每个关联文件的路径、截取时间和类型
+- **TypeScript**：新增 `AssetFile` 接口；`addFileToAsset` action 在截图/截取后自动记录文件与时间戳
+- `ensure_workspace_dirs` 现在创建统一的 `assets/` 目录而非 legacy `screenshots/clips/thumbnails`
+
+### 6. 跨平台路径兼容
+- `saveProject` 时将 `proxyFilePath` 转为相对路径存储（如 `proxy.mp4`）
+- `loadProject` 时根据当前 OS 路径分隔符自动还原为绝对路径
+- Asset 文件路径始终使用相对路径（如 `assets/character/Andy/screenshot.png`）
+
+### 7. 项目切换
+- 顶部标题栏新增「📂 打开文件夹」按钮
+- 点击后自动保存当前项目 → 弹出文件夹选择器 → 重新加载新 workspace，无需重启应用
