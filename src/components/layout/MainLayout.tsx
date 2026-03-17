@@ -15,6 +15,7 @@ export const MainLayout: React.FC = () => {
     const updateMetadata = useProjectStore(s => s.updateMetadata);
     const isDirty = useProjectStore(s => s.isDirty);
     const saveProject = useProjectStore(s => s.saveProject);
+    const switchProject = useProjectStore(s => s.switchProject);
 
     const [isAssetSidebarOpen, setIsAssetSidebarOpen] = useState(true);
 
@@ -26,6 +27,14 @@ export const MainLayout: React.FC = () => {
                 <div className="header-left">
                     <span className="app-logo">🎬</span>
                     <span className="app-name">拆梦机器</span>
+                    <button
+                        className="save-btn"
+                        onClick={() => switchProject()}
+                        title="打开另一个工作文件夹 (自动保存当前项目)"
+                        style={{ marginLeft: '0.5rem' }}
+                    >
+                        📂 打开文件夹
+                    </button>
                     <span className="workspace-path" title={workspace || ''}>
                         {workspace ? workspace.split('/').pop() || workspace : ''}
                     </span>

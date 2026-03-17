@@ -6,8 +6,9 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
 import { smartImport, takeScreenshot } from '../../services/ffmpegService';
+import { parseSrt } from '../../services/subtitleParser';
 import { AssetSelectModal } from '../assets/AssetSelectModal';
-import type { Asset } from '../../types';
+import type { Asset, SubtitleCue } from '../../types';
 import './VideoPlayer.css';
 
 export const VideoPlayer: React.FC = () => {
@@ -18,6 +19,8 @@ export const VideoPlayer: React.FC = () => {
     const setProxyFilePath = useProjectStore(s => s.setProxyFilePath);
     const addCutPoint = useProjectStore(s => s.addCutPoint);
     const saveProject = useProjectStore(s => s.saveProject);
+    const setSubtitleFilePath = useProjectStore(s => s.setSubtitleFilePath);
+    const addFileToAsset = useProjectStore(s => s.addFileToAsset);
 
     const {
         isPlaying,
@@ -49,6 +52,11 @@ export const VideoPlayer: React.FC = () => {
     const [clipStartTime, setClipStartTime] = useState(0);
     const [clipEndTime, setClipEndTime] = useState(0);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+    // Subtitle state
+    const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
+    const [showSubtitles, setShowSubtitles] = useState(false);
+    const [showSubtitleMenu, setShowSubtitleMenu] = useState(false);
 
     const showToast = (msg: string) => {
         setToastMessage(msg);
@@ -210,26 +218,30 @@ export const VideoPlayer: React.FC = () => {
         setClipEndTime(Math.min(currentTime + 5, duration));
     };
 
-    const handleAssetConfirm = async (asset: Asset, options?: { isAudio?: boolean }) => {
+    const handleAssetConfirm = async (asset: Asset, options?: { isAudio?: boolean; customFilename?: string }) => {
         setIsAssetModalOpen(false);
         if (!workspace || !project?.videoFilePath) return;
 
         try {
             if (modalMode === 'screenshot') {
                 const timestamp = currentTime;
-                // Generate clean filename
-                const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
-                const filename = `${asset.name}_${dateStr}.png`;
+                const baseName = options?.customFilename || `${asset.name}_${new Date().toISOString().replace(/[:.]/g, '-')}`;
+                const filename = baseName.endsWith('.png') ? baseName : `${baseName}.png`;
                 const outputPath = await join(workspace, 'assets', asset.category, asset.name, filename);
 
                 await takeScreenshot(project.videoFilePath, timestamp, outputPath);
+
+                // Record file to asset
+                const relativePath = `assets/${asset.category}/${asset.name}/${filename}`;
+                addFileToAsset(asset.id, { path: relativePath, timestamp, type: 'screenshot' });
+
                 showToast(`提取成功！截图已保存至 ${asset.name} 资产`);
             } else if (modalMode === 'clip') {
                 setIsClippingMode(false);
                 const isAudio = options?.isAudio;
-                const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
                 const ext = isAudio ? 'mp3' : 'mp4';
-                const filename = `${asset.name}_${isAudio ? 'audio' : 'clip'}_${dateStr}.${ext}`;
+                const baseName = options?.customFilename || `${asset.name}_${isAudio ? 'audio' : 'clip'}_${new Date().toISOString().replace(/[:.]/g, '-')}`;
+                const filename = baseName.endsWith(`.${ext}`) ? baseName : `${baseName}.${ext}`;
                 const outputPath = await join(workspace, 'assets', asset.category, asset.name, filename);
 
                 const { invoke } = await import('@tauri-apps/api/core');
@@ -239,6 +251,10 @@ export const VideoPlayer: React.FC = () => {
 
                 showToast(`正在提取片段...请稍候`);
                 await exportClip(project.videoFilePath, clipStartTime, clipEndTime, outputPath, isAudio);
+
+                // Record file to asset
+                const relativePath = `assets/${asset.category}/${asset.name}/${filename}`;
+                addFileToAsset(asset.id, { path: relativePath, timestamp: clipStartTime, type: isAudio ? 'audio' : 'clip' });
 
                 showToast(`提取成功！${isAudio ? '音频' : '视频'}已保存至 ${asset.name} 资产`);
             }
@@ -309,6 +325,33 @@ export const VideoPlayer: React.FC = () => {
                         setVideoError(null);
                     }}
                 />
+
+                {/* Subtitle overlay */}
+                {showSubtitles && subtitleCues.length > 0 && (() => {
+                    const activeCue = subtitleCues.find(c => currentTime >= c.startTime && currentTime <= c.endTime);
+                    if (!activeCue) return null;
+                    return (
+                        <div style={{
+                            position: 'absolute',
+                            bottom: '60px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(0,0,0,0.75)',
+                            color: '#fff',
+                            padding: '6px 16px',
+                            borderRadius: '4px',
+                            fontSize: '1.05rem',
+                            lineHeight: '1.5',
+                            maxWidth: '80%',
+                            textAlign: 'center',
+                            pointerEvents: 'none',
+                            zIndex: 30,
+                            whiteSpace: 'pre-wrap',
+                        }}>
+                            {activeCue.text}
+                        </div>
+                    );
+                })()}
             </div>
 
             {toastMessage && (
@@ -404,6 +447,67 @@ export const VideoPlayer: React.FC = () => {
                     </button>
                     <button className="ctrl-btn" onClick={handleClipClick} title="视频片段截取">
                         🎞️
+                    </button>
+                    <button
+                        className="ctrl-btn"
+                        onClick={() => setShowSubtitleMenu(!showSubtitleMenu)}
+                        title="字幕"
+                        style={{ position: 'relative', color: showSubtitles ? '#66aaff' : undefined }}
+                    >
+                        CC
+                        {showSubtitleMenu && (
+                            <div style={{
+                                position: 'absolute',
+                                bottom: '100%',
+                                right: 0,
+                                background: '#1e1e2d',
+                                border: '1px solid rgba(255,255,255,0.15)',
+                                borderRadius: '6px',
+                                padding: '4px',
+                                minWidth: '160px',
+                                zIndex: 1000,
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                            }}>
+                                <button
+                                    style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#ccc', padding: '8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.82rem' }}
+                                    onClick={async (e) => {
+                                        e.stopPropagation();
+                                        setShowSubtitleMenu(false);
+                                        const file = await open({
+                                            filters: [{ name: '字幕文件', extensions: ['srt'] }],
+                                            title: '选择字幕文件',
+                                        });
+                                        if (file) {
+                                            try {
+                                                const { readTextFile } = await import('@tauri-apps/plugin-fs');
+                                                const content = await readTextFile(file as string);
+                                                const cues = parseSrt(content);
+                                                setSubtitleCues(cues);
+                                                setShowSubtitles(true);
+                                                setSubtitleFilePath(file as string);
+                                                showToast(`已加载 ${cues.length} 条字幕`);
+                                            } catch (err) {
+                                                showToast(`字幕加载失败: ${err}`);
+                                            }
+                                        }
+                                    }}
+                                >
+                                    📄 加载外挂字幕 (.srt)
+                                </button>
+                                {subtitleCues.length > 0 && (
+                                    <button
+                                        style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: showSubtitles ? '#66aaff' : '#ccc', padding: '8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.82rem' }}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setShowSubtitles(!showSubtitles);
+                                            setShowSubtitleMenu(false);
+                                        }}
+                                    >
+                                        {showSubtitles ? '✅ 隐藏字幕' : '显示字幕'}
+                                    </button>
+                                )}
+                            </div>
+                        )}
                     </button>
                     <div className="volume-control">
                         <span className="volume-icon">🔊</span>

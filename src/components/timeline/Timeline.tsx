@@ -271,6 +271,13 @@ export const Timeline: React.FC = () => {
     // Handle click and drag to scrub/edit
     const handlePointerDown = useCallback((e: React.PointerEvent) => {
         if (!canvasRef.current || duration <= 0) return;
+
+        // Don't steal clicks from the native scrollbar (bottom ~16px of container)
+        if (containerRef.current) {
+            const containerRect = containerRef.current.getBoundingClientRect();
+            if (e.clientY > containerRect.bottom - 16) return;
+        }
+
         const rect = canvasRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const time = (x + scrollLeft) / pixelsPerSecond;

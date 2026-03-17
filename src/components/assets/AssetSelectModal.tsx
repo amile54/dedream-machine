@@ -7,7 +7,7 @@ import './AssetSelectModal.css';
 interface AssetSelectModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onConfirm: (asset: Asset, options?: { isAudio?: boolean }) => void;
+    onConfirm: (asset: Asset, options?: { isAudio?: boolean; customFilename?: string }) => void;
     title?: string;
     modalMode?: 'screenshot' | 'clip';
 }
@@ -27,13 +27,20 @@ export const AssetSelectModal: React.FC<AssetSelectModalProps> = ({
     const [isCreatingNew, setIsCreatingNew] = useState(false);
     const [newAssetName, setNewAssetName] = useState('');
     const [isAudio, setIsAudio] = useState(false);
+    const [customFilename, setCustomFilename] = useState('');
 
     useEffect(() => {
         if (isOpen) {
             setIsCreatingNew(false);
             setNewAssetName('');
+            // Generate default filename
+            const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            const defaultName = modalMode === 'clip'
+                ? `clip_${dateStr}`
+                : `screenshot_${dateStr}`;
+            setCustomFilename(defaultName);
         }
-    }, [isOpen]);
+    }, [isOpen, modalMode]);
 
     if (!isOpen || !project) return null;
 
@@ -54,13 +61,13 @@ export const AssetSelectModal: React.FC<AssetSelectModalProps> = ({
                 const latestAssets = useProjectStore.getState().project?.assets || [];
                 const newlyCreated = latestAssets[latestAssets.length - 1]; // highly likely
                 if (newlyCreated && newlyCreated.name === newAssetName.trim()) {
-                    onConfirm(newlyCreated, { isAudio });
+                    onConfirm(newlyCreated, { isAudio, customFilename: customFilename.trim() || undefined });
                 }
             }, 50);
         } else {
             const asset = project.assets?.find(a => a.id === selectedAssetId);
             if (asset) {
-                onConfirm(asset, { isAudio });
+                onConfirm(asset, { isAudio, customFilename: customFilename.trim() || undefined });
             }
         }
     };
@@ -154,6 +161,16 @@ export const AssetSelectModal: React.FC<AssetSelectModalProps> = ({
                             {isAudio && <span style={{ fontSize: '12px', color: '#888', marginLeft: '24px' }}>将提取保存为高质量音频(.mp3)</span>}
                         </div>
                     )}
+
+                    <div className="form-group">
+                        <label>文件名：</label>
+                        <input
+                            type="text"
+                            placeholder="输入文件名..."
+                            value={customFilename}
+                            onChange={(e) => setCustomFilename(e.target.value)}
+                        />
+                    </div>
                 </div>
 
                 <div className="asset-modal-footer">

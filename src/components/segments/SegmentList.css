@@ -4,6 +4,7 @@
     height: 100%;
     background: #10101e;
     overflow: hidden;
+    min-height: 0;
 }
 
 .segment-list--empty {
@@ -56,6 +57,7 @@
 
 .segment-cards {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 0.4rem;
     display: flex;
@@ -83,6 +85,7 @@
     padding: 0.6rem;
     cursor: pointer;
     transition: all 0.2s ease;
+    flex-shrink: 0;
 }
 
 .segment-card:hover {

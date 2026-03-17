@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import type { Project, Segment, TextBlock, TextBlockType, Asset, AssetCategory } from '../types';
+import type { Project, Segment, TextBlock, TextBlockType, Asset, AssetCategory, AssetFile } from '../types';
 import { invoke } from '@tauri-apps/api/core';
 
 interface ProjectState {
@@ -33,10 +33,12 @@ interface ProjectState {
     addAsset: (category: AssetCategory, name: string) => void;
     updateAsset: (id: string, updates: Partial<Asset>) => void;
     removeAsset: (id: string) => void;
+    addFileToAsset: (assetId: string, file: AssetFile) => void;
 
     // Project I/O
     saveProject: () => Promise<void>;
     loadProject: (workspace: string) => Promise<boolean>;
+    switchProject: () => Promise<void>;
 
     // Proxy
     setProxyFilePath: (path: string) => void;
@@ -298,6 +300,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             category,
             description: '',
             createdAt: new Date().toISOString(),
+            files: [],
         };
 
         set({
@@ -336,12 +339,36 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         });
     },
 
+    addFileToAsset: (assetId, file) => {
+        const { project } = get();
+        if (!project) return;
+
+        const assets = (project.assets || []).map(a =>
+            a.id === assetId ? { ...a, files: [...(a.files || []), file] } : a
+        );
+
+        set({
+            project: { ...project, assets, updatedAt: new Date().toISOString() },
+            isDirty: true,
+        });
+    },
+
     saveProject: async () => {
         const { workspace, project } = get();
         if (!workspace || !project) return;
 
         try {
-            await invoke('save_project', { workspace, project });
+            // Convert proxyFilePath to relative for portability
+            const projectToSave = { ...project };
+            if (projectToSave.proxyFilePath && projectToSave.proxyFilePath.startsWith(workspace)) {
+                // Extract the relative part (e.g. "/Users/me/project/proxy.mp4" -> "proxy.mp4")
+                let relative = projectToSave.proxyFilePath.slice(workspace.length);
+                // Remove leading slash or backslash
+                relative = relative.replace(/^[/\\]/, '');
+                projectToSave.proxyFilePath = relative;
+            }
+
+            await invoke('save_project', { workspace, project: projectToSave });
             set({ isDirty: false });
         } catch (err) {
             console.error('Failed to save project:', err);
@@ -355,6 +382,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             await invoke('ensure_workspace_dirs', { workspace });
             const project = await invoke<Project | null>('load_project', { workspace });
             if (project) {
+                // Convert relative proxyFilePath back to absolute
+                if (project.proxyFilePath && !project.proxyFilePath.startsWith('/') && !project.proxyFilePath.match(/^[A-Za-z]:\\/)) {
+                    // It's a relative path — resolve against workspace
+                    const sep = workspace.includes('\\') ? '\\' : '/';
+                    project.proxyFilePath = workspace + sep + project.proxyFilePath;
+                }
                 set({ workspace, project, isDirty: false, isLoading: false, undoStack: [] });
                 return true;
             }
@@ -383,5 +416,31 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             project: { ...project, subtitleFilePath: path, updatedAt: new Date().toISOString() },
             isDirty: true,
         });
+    },
+
+    switchProject: async () => {
+        const { saveProject, isDirty, loadProject } = get();
+
+        // Auto-save current project if dirty
+        if (isDirty) {
+            try { await saveProject(); } catch { /* ignore */ }
+        }
+
+        // Open folder picker
+        const { open } = await import('@tauri-apps/plugin-dialog');
+        const folder = await open({
+            directory: true,
+            multiple: false,
+            title: '选择工作文件夹',
+        });
+
+        if (!folder) return;
+
+        // Reset state and load new project
+        set({ workspace: null, project: null, isDirty: false, undoStack: [] });
+        const hasExisting = await loadProject(folder as string);
+        if (!hasExisting) {
+            set({ workspace: folder as string });
+        }
     },
 }));

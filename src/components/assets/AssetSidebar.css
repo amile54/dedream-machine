@@ -5,6 +5,7 @@
     background: #1e1e2d;
     color: #e0e0e0;
     overflow: hidden;
+    min-height: 0;
 }
 
 .asset-sidebar-header {
@@ -22,6 +23,7 @@
 
 .asset-sidebar-content {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 0.5rem;
     display: flex;
@@ -43,6 +45,7 @@
     border: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: 6px;
     overflow: hidden;
+    flex-shrink: 0;
 }
 
 .asset-category-header {

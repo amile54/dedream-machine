@@ -32,12 +32,19 @@ export type AssetCategory =
   | 'segment_analysis'
   | 'other';
 
+export interface AssetFile {
+  path: string;          // relative to workspace
+  timestamp?: number;    // video time where this was captured
+  type: 'screenshot' | 'clip' | 'audio';
+}
+
 export interface Asset {
   id: string;
   name: string;
   category: AssetCategory;
   description: string;
   createdAt: string;
+  files: AssetFile[];
 }
 
 export interface Project {

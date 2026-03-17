@@ -30,7 +30,41 @@ pub struct TextBlock {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Metadata {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default, rename = "sourceUrl")]
+    pub source_url: String,
+    #[serde(default, rename = "videoId")]
+    pub video_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AssetFile {
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<f64>,
+    #[serde(rename = "type")]
+    pub file_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Asset {
+    pub id: String,
+    pub name: String,
+    pub category: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default, rename = "createdAt")]
+    pub created_at: String,
+    #[serde(default)]
+    pub files: Vec<AssetFile>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Project {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Metadata>,
     #[serde(rename = "videoFilePath")]
     pub video_file_path: String,
     #[serde(rename = "proxyFilePath")]
@@ -38,6 +72,8 @@ pub struct Project {
     pub segments: Vec<Segment>,
     #[serde(rename = "textBlocks")]
     pub text_blocks: Vec<TextBlock>,
+    #[serde(default)]
+    pub assets: Vec<Asset>,
     #[serde(rename = "subtitleFilePath")]
     pub subtitle_file_path: Option<String>,
     #[serde(rename = "createdAt")]
@@ -68,11 +104,10 @@ fn load_project(workspace: String) -> Result<Option<Project>, String> {
 #[tauri::command]
 fn ensure_workspace_dirs(workspace: String) -> Result<(), String> {
     let base = PathBuf::from(&workspace);
-    for dir in &["screenshots", "clips", "thumbnails"] {
-        let dir_path = base.join(dir);
-        if !dir_path.exists() {
-            fs::create_dir_all(&dir_path).map_err(|e| e.to_string())?;
-        }
+    // Create the assets directory (replaces legacy screenshots/clips/thumbnails)
+    let assets_dir = base.join("assets");
+    if !assets_dir.exists() {
+        fs::create_dir_all(&assets_dir).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
