@@ -467,8 +467,19 @@ export const Timeline: React.FC = () => {
         }
 
         setPixelsPerSecond(clamped);
+
+        // VITAL FIX: React state updates are async. If we just assign scrollLeft now, 
+        // the browser will REJECT it if newScrollLeft > current DOM scrollWidth.
+        // We must synchronously force the wrapper to be wide enough BEFORE setting scrollLeft,
+        // so the browser accepts the scroll assignment. React will reconcile the style on the next render.
+        const newTotalWidth = duration * clamped;
+        const wrapper = containerRef.current.firstElementChild as HTMLElement;
+        if (wrapper) {
+            wrapper.style.width = `${Math.max(newTotalWidth, containerWidth)}px`;
+        }
+
         containerRef.current.scrollLeft = newScrollLeft;
-    }, [pixelsPerSecond, currentTime, setPixelsPerSecond]);
+    }, [pixelsPerSecond, currentTime, setPixelsPerSecond, duration]);
 
     // Fit entire timeline in view
     const zoomFitAll = useCallback(() => {
