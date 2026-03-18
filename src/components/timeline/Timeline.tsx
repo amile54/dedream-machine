@@ -307,6 +307,13 @@ export const Timeline: React.FC = () => {
         // NOTE: Do NOT overwrite pixelsPerSecondRef here — it is the authoritative source
         // and is only updated synchronously inside performZoom().
         
+        // Update wrapper width via DOM (NOT React JSX) to prevent stale-state shrinkage
+        const wrapper = containerRef.current.firstElementChild as HTMLElement;
+        if (wrapper) {
+            const totalPx = Math.max(duration * pixelsPerSecond, width);
+            wrapper.style.width = `${totalPx}px`;
+        }
+
         // Priority queuing: Latest visible goes first (LIFO array behavior)
         extractionQueueRef.current = newVisibleThumbs.reverse();
 
@@ -633,8 +640,6 @@ export const Timeline: React.FC = () => {
         }
     }, [performZoom]);
 
-    const totalWidth = duration * pixelsPerSecond;
-
     return (
         <div className="timeline">
             <div className="timeline-toolbar">
@@ -673,7 +678,7 @@ export const Timeline: React.FC = () => {
             >
                 <div
                     className={`timeline-canvas-wrapper ${isDraggingStyle ? 'is-dragging' : ''}`}
-                    style={{ width: Math.max(totalWidth, containerRef.current?.clientWidth || 0), position: 'relative' }}
+                    style={{ position: 'relative' }}
                     onPointerLeave={handlePointerLeave}
                 >
                     <canvas

@@ -7,32 +7,19 @@ interface TimelineState {
 
     // Actions
     setPixelsPerSecond: (pps: number) => void;
-    zoomIn: () => void;
-    zoomOut: () => void;
     setSelectedSegmentId: (id: string | null) => void;
     setHoveredTime: (time: number | null) => void;
 }
 
 const MIN_PPS = 0.01; // Fits 3hr+ movie in viewport
 const MAX_PPS = 500;   // Frame-level editing
-const ZOOM_FACTOR = 2; // 2x per click (industry standard)
 
-export const useTimelineStore = create<TimelineState>((set, get) => ({
+export const useTimelineStore = create<TimelineState>((set) => ({
     pixelsPerSecond: 20,
     selectedSegmentId: null,
     hoveredTime: null,
 
     setPixelsPerSecond: (pps) => set({ pixelsPerSecond: Math.max(MIN_PPS, Math.min(MAX_PPS, pps)) }),
-
-    zoomIn: () => {
-        const { pixelsPerSecond } = get();
-        set({ pixelsPerSecond: Math.min(MAX_PPS, pixelsPerSecond * ZOOM_FACTOR) });
-    },
-
-    zoomOut: () => {
-        const { pixelsPerSecond } = get();
-        set({ pixelsPerSecond: Math.max(MIN_PPS, pixelsPerSecond / ZOOM_FACTOR) });
-    },
 
     setSelectedSegmentId: (id) => set({ selectedSegmentId: id }),
     setHoveredTime: (time) => set({ hoveredTime: time }),
