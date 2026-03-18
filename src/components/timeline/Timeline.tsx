@@ -531,38 +531,61 @@ export const Timeline: React.FC = () => {
     }, []);
 
     // --- Zoom: Playhead Anchoring (Industry Standard) ---
+    // --- Zoom: Smart Anchoring (JianYing/FCP Standard) ---
     const performZoom = useCallback((newPps: number) => {
         if (!containerRef.current) return;
         const clamped = Math.max(MIN_PPS, Math.min(MAX_PPS, newPps));
         const ct = currentTimeRef.current;
         
-        // 1. Where is the playhead exactly right now, in pixels from the left edge of the screen?
         const currentPps = pixelsPerSecondRef.current;
         const currentSl = containerRef.current.scrollLeft;
+        const clientWidth = containerRef.current.clientWidth;
+        
+        // Find playhead physical pixel location
         const playheadPhysicalX = (ct * currentPps) - currentSl;
-
-        // 2. Calculate the target scroll that keeps the playhead at the EXACT SAME physical screen pixel
-        const newPlayheadAbsoluteX = ct * clamped;
-        const target = Math.max(0, newPlayheadAbsoluteX - playheadPhysicalX);
-
-        // 3. Immediately widen the real DOM so the browser can technically accept the new scroll value
-        const wrapper = containerRef.current.firstElementChild as HTMLElement;
-        if (wrapper) {
-            wrapper.style.width = `${Math.max(durationRef.current * clamped, containerRef.current.clientWidth)}px`;
+        
+        // Smart Anchor logic:
+        // If playhead is currently fully visible on screen, we anchor perfectly on it.
+        // If playhead is off-screen, we anchor on the exact center of the current visible screen.
+        let anchorAbsoluteTime: number;
+        let anchorPhysicalX: number;
+        
+        if (playheadPhysicalX > 0 && playheadPhysicalX < clientWidth) {
+            // Playhead is visible -> anchor on playhead
+            anchorAbsoluteTime = ct;
+            anchorPhysicalX = playheadPhysicalX;
+        } else {
+            // Playhead is offscreen -> anchor on center of viewport
+            anchorPhysicalX = clientWidth / 2;
+            anchorAbsoluteTime = (currentSl + anchorPhysicalX) / currentPps;
         }
 
-        // 4. THE MAGIC BULLET: Force the browser to flush its layout engine synchronously!
-        // Without this line, the browser caches the old scrollWidth, thinks our new `target` 
-        // exceeds the boundaries, and severely clips the scroll, throwing the timeline back in time.
+        // Calculate the target native scroll
+        const newAnchorAbsoluteX = anchorAbsoluteTime * clamped;
+        const targetScroll = Math.max(0, newAnchorAbsoluteX - anchorPhysicalX);
+
+        // Instantly force DOM width expansion to prevent scroll bounds clipping
+        const wrapper = containerRef.current.firstElementChild as HTMLElement;
+        if (wrapper) {
+            wrapper.style.width = `${Math.max(durationRef.current * clamped, clientWidth)}px`;
+        }
+        
+        // Synchronous forced layout flush
         void containerRef.current.scrollWidth;
 
-        // 5. Safely apply the scroll to the now-flushed DOM tree
-        containerRef.current.scrollLeft = target;
+        // Force native scroll
+        containerRef.current.scrollLeft = targetScroll;
 
-        // 6. Update references immediately for trackpad rapid-fire protection
+        // Double lock: protect the scroll position against React layout paints during the next few frames
+        requestAnimationFrame(() => {
+            if (containerRef.current) containerRef.current.scrollLeft = targetScroll;
+            requestAnimationFrame(() => {
+                if (containerRef.current) containerRef.current.scrollLeft = targetScroll;
+            });
+        });
+
+        // Update state references
         pixelsPerSecondRef.current = clamped;
-        
-        // 7. Tell React to update UI asynchronously
         setPixelsPerSecond(clamped);
     }, [setPixelsPerSecond]);
 
