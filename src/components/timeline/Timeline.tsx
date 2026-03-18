@@ -549,9 +549,9 @@ export const Timeline: React.FC = () => {
     const performZoom = useCallback((newPps: number) => {
         if (!containerRef.current) return;
         const clamped = Math.max(MIN_PPS, Math.min(MAX_PPS, newPps));
-        const ct = useVideoStore.getState().currentTime;
+        const ct = currentTimeRef.current; // Use the ref for absolute latest
         
-        // 1. Find playhead's physical pixel offset from the left of the viewport
+        // 1. Find playhead's physical pixel offset using the EXACT synchronous zoom ratio that matches the current scrollLeft
         const currentPps = pixelsPerSecondRef.current;
         const currentSl = containerRef.current.scrollLeft;
         const physicalOffset = (ct * currentPps) - currentSl;
@@ -559,36 +559,38 @@ export const Timeline: React.FC = () => {
         // 2. We want the playhead to be at the exact same physicalOffset after zoom
         const target = Math.max(0, (ct * clamped) - physicalOffset);
 
-        // 3. CRITICAL: Mac/Chrome will silently REJECT any scrollLeft value that exceeds 
-        // the current layout's scrollWidth. We MUST force the DOM element to instantly be
-        // wide enough to accept the new scroll value before React's slow render cycle.
+        // 3. Force DOM physical resize instantaneously to prevent layout scroll-capping
         const wrapper = containerRef.current.firstElementChild as HTMLElement;
         if (wrapper) {
-            wrapper.style.width = `${Math.max(duration * clamped, containerRef.current.clientWidth)}px`;
+            wrapper.style.width = `${Math.max(durationRef.current * clamped, containerRef.current.clientWidth)}px`;
         }
 
-        // 4. Now the DOM is physically wide enough. Safe to set scroll.
+        // 4. Set the native scroll instantaneously 
         containerRef.current.scrollLeft = target;
 
-        // 5. Tell React to catch up asynchronously
+        // 5. CRITICAL: Update the ref synchronously so the very next trackpad event (which might fire in 2ms) uses the right baseline!
+        pixelsPerSecondRef.current = clamped;
+        
+        // 6. Tell React to catch up asynchronously
         setPixelsPerSecond(clamped);
-    }, [setPixelsPerSecond, duration]);
+    }, [setPixelsPerSecond]);
 
     // Fit entire timeline in view
     const zoomFitAll = useCallback(() => {
-        if (!containerRef.current || duration <= 0) return;
-        const fitPps = Math.max(MIN_PPS, containerRef.current.clientWidth / duration * 0.95);
+        if (!containerRef.current || durationRef.current <= 0) return;
+        const fitPps = Math.max(MIN_PPS, containerRef.current.clientWidth / durationRef.current * 0.95);
+        pixelsPerSecondRef.current = fitPps;
         setPixelsPerSecond(fitPps);
         containerRef.current.scrollLeft = 0;
-    }, [duration, setPixelsPerSecond]);
+    }, [setPixelsPerSecond]);
 
     // Handle wheel for zoom — Ctrl/Cmd + scroll, otherwise horizontal scroll
     const handleWheel = useCallback((e: React.WheelEvent) => {
         if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
             const delta = e.deltaY > 0 ? -1 : 1;
-            // 25% per wheel tick (industry standard feels)
-            const newPps = pixelsPerSecond * (1 + delta * 0.25);
+            // Use the REF to calculate new zoom, because React state might be multiple frames behind during rapid scrolling!
+            const newPps = pixelsPerSecondRef.current * (1 + delta * 0.25);
             performZoom(newPps);
         } else {
             // Regular wheel scrolls horizontally
@@ -596,7 +598,7 @@ export const Timeline: React.FC = () => {
                 containerRef.current.scrollLeft += e.deltaY;
             }
         }
-    }, [pixelsPerSecond, performZoom]);
+    }, [performZoom]);
 
     const totalWidth = duration * pixelsPerSecond;
 
