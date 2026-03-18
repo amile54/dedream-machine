@@ -111,16 +111,16 @@ export const VideoPlayer: React.FC = () => {
         const current = videoRef.current.currentTime;
         setCurrentTime(current);
 
-        // Feature: Loop playback if a segment is selected
+        // Loop playback only when actively playing with a segment selected
+        const { isPlaying } = useVideoStore.getState();
+        if (!isPlaying) return;
         const selectedSegmentId = useTimelineStore.getState().selectedSegmentId;
         if (selectedSegmentId) {
             const project = useProjectStore.getState().project;
             if (project) {
-                const activeSegment = project.segments.find(s => s.id === selectedSegmentId);
-                if (activeSegment && current >= activeSegment.endTime) {
-                    // Instantly loop back to the start of the segment
-                    videoRef.current.currentTime = activeSegment.startTime;
-                    setCurrentTime(activeSegment.startTime);
+                const seg = project.segments.find(s => s.id === selectedSegmentId);
+                if (seg && current >= seg.endTime) {
+                    videoRef.current.currentTime = seg.startTime;
                 }
             }
         }

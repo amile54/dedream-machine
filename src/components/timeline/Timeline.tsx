@@ -410,14 +410,14 @@ export const Timeline: React.FC = () => {
         const y = e.clientY - rect.top;
         const isRulerClick = y <= RULER_HEIGHT;
 
-        // 1. If clicking the Ruler (top area), ONLY scrub playhead
+        // 1. If clicking the Ruler (top area), scrub playhead AND deselect segment
         if (isRulerClick) {
             isDraggingRef.current = true;
             setIsDraggingStyle(true);
             setSelectedCutPointIndex(null);
+            setSelectedSegmentId(null);
 
             if (time >= 0 && time <= duration) {
-                // Not snapping when clicking the ruler is usually better for fine control
                 seekTo(time);
             }
         } 
@@ -545,39 +545,30 @@ export const Timeline: React.FC = () => {
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [selectedCutPointIndex, removeCutPoint]);
 
-    // --- Zoom ---
+    // --- Zoom: anchor on playhead, keep it at its current screen position ---
     const performZoom = useCallback((newPps: number) => {
         if (!containerRef.current) return;
         const clamped = Math.max(MIN_PPS, Math.min(MAX_PPS, newPps));
+        const pps = pixelsPerSecondRef.current;
+        const ct = currentTimeRef.current;
+        const sl = containerRef.current.scrollLeft;
 
-        // CRITICAL FIX: To prevent zooming from "losing" the playhead or "jumping back", 
-        // the math must be solved synchronously with the DOM assignment.
-        // We find playhead physical offset on screen, scale up the canvas, and then IMMEDIATELY 
-        // put the scroll bar such that the playhead remains precisely at the exact same physical offset!
-        
-        // 1. Where is the playhead right now relative to the view frame?
-        const currentSl = containerRef.current.scrollLeft;
-        const playheadPhysicalX = (currentTime * pixelsPerSecond) - currentSl; 
+        // Where is the playhead on screen right now? (pixels from left edge of viewport)
+        const screenX = ct * pps - sl;
 
-        // 2. Set generic React state
+        // Update React state
         setPixelsPerSecond(clamped);
 
-        // 3. To apply the scroll reliably on Mac Safari/Chromium, we must synchronously resize the canvas
-        // before setting scrollLeft. Otherwise the browser rejects the scroll value if it's too large.
-        const newTotalWidth = duration * clamped;
+        // Force the wrapper wide enough so the browser accepts the new scrollLeft
         const wrapper = containerRef.current.firstElementChild as HTMLElement;
         if (wrapper) {
-            wrapper.style.width = `${Math.max(newTotalWidth, containerRef.current.clientWidth || 0)}px`;
+            wrapper.style.width = `${Math.max(duration * clamped, containerRef.current.clientWidth)}px`;
         }
 
-        // 4. Force perfect physical tracking!
-        const newPlayheadAbsoluteX = currentTime * clamped;
-        containerRef.current.scrollLeft = Math.max(0, newPlayheadAbsoluteX - playheadPhysicalX);
-        
-        // Ensure immediate redraw since we killed the 60fps loop
-        draw(); 
-
-    }, [currentTime, setPixelsPerSecond, duration, pixelsPerSecond, draw]);
+        // Set scrollLeft so playhead stays at the same screenX
+        containerRef.current.scrollLeft = Math.max(0, ct * clamped - screenX);
+        draw();
+    }, [setPixelsPerSecond, duration, draw]);
 
     // Fit entire timeline in view
     const zoomFitAll = useCallback(() => {
