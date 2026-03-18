@@ -440,13 +440,24 @@ export const Timeline: React.FC = () => {
             anchorTime = (sl + anchorMouseX) / pixelsPerSecond;
             viewOffset = anchorMouseX;
         } else {
-            // Anchor to the CENTER OF THE VIEWPORT (what the user is looking at),
-            // not the playhead, to prevent jarring jumps when zooming via buttons.
+            // Anchor to the CENTER OF THE VIEWPORT
             viewOffset = containerWidth / 2;
             anchorTime = (sl + viewOffset) / pixelsPerSecond;
         }
 
-        const newScrollLeft = Math.max(0, anchorTime * clamped - viewOffset);
+        let newScrollLeft = Math.max(0, anchorTime * clamped - viewOffset);
+
+        // HARD CONSTRAINT: Playhead must never be lost from view during zoom
+        const playheadX = currentTime * clamped;
+        const padding = 50; // Keep playhead at least 50px away from the edges
+
+        if (playheadX < newScrollLeft + padding) {
+            // Playhead is too far left (or offscreen left), adjust scrollLeft to bring it in
+            newScrollLeft = Math.max(0, playheadX - padding);
+        } else if (playheadX > newScrollLeft + containerWidth - padding) {
+            // Playhead is too far right (or offscreen right), adjust scrollLeft
+            newScrollLeft = Math.max(0, playheadX - containerWidth + padding);
+        }
 
         setPixelsPerSecond(clamped);
         containerRef.current.scrollLeft = newScrollLeft;
