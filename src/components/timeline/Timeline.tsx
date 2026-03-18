@@ -545,11 +545,10 @@ export const Timeline: React.FC = () => {
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [selectedCutPointIndex, removeCutPoint]);
 
-    // Pending scroll position to apply after React commits the new DOM
+    // --- Zoom: always center playhead ---
     const pendingScrollRef = useRef<number | null>(null);
 
-    // useLayoutEffect runs synchronously AFTER React updates the DOM,
-    // so the wrapper width is already correct at this point.
+    // Primary: apply scroll right after React commits the new DOM
     useLayoutEffect(() => {
         if (pendingScrollRef.current !== null && containerRef.current) {
             containerRef.current.scrollLeft = pendingScrollRef.current;
@@ -557,20 +556,22 @@ export const Timeline: React.FC = () => {
         }
     });
 
-    // --- Zoom: center playhead on screen ---
     const performZoom = useCallback((newPps: number) => {
         if (!containerRef.current) return;
         const clamped = Math.max(MIN_PPS, Math.min(MAX_PPS, newPps));
-
-        // Read currentTime fresh from the store — the ref can be stale
         const ct = useVideoStore.getState().currentTime;
         const halfView = containerRef.current.clientWidth / 2;
         const target = Math.max(0, ct * clamped - halfView);
 
-        console.log(`[Zoom] ct=${ct.toFixed(1)}s pps=${clamped.toFixed(2)} target=${target.toFixed(0)} halfView=${halfView.toFixed(0)}`);
-
         pendingScrollRef.current = target;
         setPixelsPerSecond(clamped);
+
+        // Backup: in case React does another unexpected render that resets scroll
+        requestAnimationFrame(() => {
+            if (containerRef.current && Math.abs(containerRef.current.scrollLeft - target) > 5) {
+                containerRef.current.scrollLeft = target;
+            }
+        });
     }, [setPixelsPerSecond]);
 
     // Fit entire timeline in view
