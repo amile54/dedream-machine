@@ -532,62 +532,55 @@ export const Timeline: React.FC = () => {
 
     // --- Zoom: Playhead Anchoring (Industry Standard) ---
     // --- Zoom: Smart Anchoring (JianYing/FCP Standard) ---
+    // --- Zoom: Smart Anchoring (JianYing/FCP Standard) ---
     const performZoom = useCallback((newPps: number) => {
         if (!containerRef.current) return;
+        
         const clamped = Math.max(MIN_PPS, Math.min(MAX_PPS, newPps));
-        const ct = currentTimeRef.current;
-        
+        if (clamped === pixelsPerSecondRef.current) return;
+
+        const container = containerRef.current;
         const currentPps = pixelsPerSecondRef.current;
-        const currentSl = containerRef.current.scrollLeft;
-        const clientWidth = containerRef.current.clientWidth;
+        const currentSl = container.scrollLeft;
+        const clientWidth = container.clientWidth;
         
-        // Find playhead physical pixel location
+        // Always read the absolute fresh time from the store, bypassing React renders
+        const ct = useVideoStore.getState().currentTime;
         const playheadPhysicalX = (ct * currentPps) - currentSl;
         
-        // Smart Anchor logic:
-        // If playhead is currently fully visible on screen, we anchor perfectly on it.
-        // If playhead is off-screen, we anchor on the exact center of the current visible screen.
-        let anchorAbsoluteTime: number;
+        let anchorTime: number;
         let anchorPhysicalX: number;
         
+        // JianYing standard logic:
+        // If playhead is inside viewport, anchor geometry directly on playhead.
+        // If playhead is outside viewport, anchor explicitly on the center of the viewport.
         if (playheadPhysicalX > 0 && playheadPhysicalX < clientWidth) {
-            // Playhead is visible -> anchor on playhead
-            anchorAbsoluteTime = ct;
+            anchorTime = ct;
             anchorPhysicalX = playheadPhysicalX;
         } else {
-            // Playhead is offscreen -> anchor on center of viewport
             anchorPhysicalX = clientWidth / 2;
-            anchorAbsoluteTime = (currentSl + anchorPhysicalX) / currentPps;
+            anchorTime = (currentSl + anchorPhysicalX) / currentPps;
         }
 
-        // Calculate the target native scroll
-        const newAnchorAbsoluteX = anchorAbsoluteTime * clamped;
-        const targetScroll = Math.max(0, newAnchorAbsoluteX - anchorPhysicalX);
+        // Compute where the scroll MUST be to maintain the exact pixel position of the anchor
+        const safeTarget = Math.max(0, (anchorTime * clamped) - anchorPhysicalX);
 
-        // Instantly force DOM width expansion to prevent scroll bounds clipping
-        const wrapper = containerRef.current.firstElementChild as HTMLElement;
+        // Instantly force native DOM width so scrollBounds don't reject the scroll (no rAF racing)
+        const wrapper = container.firstElementChild as HTMLElement;
+        const dur = useVideoStore.getState().duration;
         if (wrapper) {
-            wrapper.style.width = `${Math.max(durationRef.current * clamped, clientWidth)}px`;
+            wrapper.style.width = `${Math.max(dur * clamped, clientWidth)}px`;
         }
-        
-        // Synchronous forced layout flush
-        void containerRef.current.scrollWidth;
 
-        // Force native scroll
-        containerRef.current.scrollLeft = targetScroll;
+        // Execute scroll
+        container.scrollLeft = safeTarget;
 
-        // Double lock: protect the scroll position against React layout paints during the next few frames
-        requestAnimationFrame(() => {
-            if (containerRef.current) containerRef.current.scrollLeft = targetScroll;
-            requestAnimationFrame(() => {
-                if (containerRef.current) containerRef.current.scrollLeft = targetScroll;
-            });
-        });
-
-        // Update state references
+        // Synchronously record baseline so the next key-repeat iteration is strictly accurate
         pixelsPerSecondRef.current = clamped;
-        setPixelsPerSecond(clamped);
-    }, [setPixelsPerSecond]);
+        
+        // Ping React asynchronously to hydrate the timeline UI marks
+        useTimelineStore.getState().setPixelsPerSecond(clamped);
+    }, []);
 
     // Handle Keyboard Shortcuts for Timeline (Cut points, Zoom)
     useEffect(() => {
