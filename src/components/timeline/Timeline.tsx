@@ -264,22 +264,23 @@ export const Timeline: React.FC = () => {
         const animate = () => {
             draw();
 
-            // Smooth Auto-Pan: Only engage if the playhead hits the right edge (85% to 100%).
-            // DO NOT snap back if headX < 0 (user scrolled ahead) or headX > viewWidth * 1.5.
-            // This allows the user to freely explore the timeline during playback.
+            /*
+            // Smooth Auto-Pan is currently fighting with the Zoom logic.
+            // When zooming out, the playhead might temporarily evaluate as "offscreen" 
+            // relative to the old scroll position, causing this 60fps loop to instantly 
+            // overwrite the zoom's carefully calculated scrollLeft.
             if (useVideoStore.getState().isPlaying && !isDraggingRef.current && containerRef.current) {
                 const sl = containerRef.current.scrollLeft;
                 const headX = useVideoStore.getState().currentTime * pixelsPerSecondRef.current - sl;
                 const viewWidth = containerRef.current.clientWidth;
 
                 if (headX > viewWidth * 0.85 && headX <= viewWidth * 1.1) {
-                    // Playhead is near the right edge, pan forward smoothly
                     containerRef.current.scrollLeft += 2;
                 } else if (headX > viewWidth * 1.1 && headX < viewWidth * 1.5) {
-                    // Playhead went just offscreen, jump to center
                     containerRef.current.scrollLeft = (useVideoStore.getState().currentTime * pixelsPerSecondRef.current) - (viewWidth / 2);
                 }
             }
+            */
 
             animFrameRef.current = requestAnimationFrame(animate);
         };
@@ -478,7 +479,14 @@ export const Timeline: React.FC = () => {
             wrapper.style.width = `${Math.max(newTotalWidth, containerWidth)}px`;
         }
 
+        console.log(`[Zoom] Pps: ${pixelsPerSecond.toFixed(2)} -> ${clamped.toFixed(2)} | Playhead Time: ${currentTime.toFixed(2)} | Target Scroll: ${newScrollLeft.toFixed(2)}`);
+
         containerRef.current.scrollLeft = newScrollLeft;
+        
+        // Log actual scroll position applied to see if browser rejected it
+        setTimeout(() => {
+            console.log(`[Zoom] Actual applied ScrollLeft: ${containerRef.current?.scrollLeft}`);
+        }, 10);
     }, [pixelsPerSecond, currentTime, setPixelsPerSecond, duration]);
 
     // Fit entire timeline in view
