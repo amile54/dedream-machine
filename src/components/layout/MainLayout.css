@@ -192,7 +192,8 @@
 
 .layout-timeline {
     height: 100%;
-    overflow: hidden;
+    /* overflow: visible — must NOT clip, or the scrollbar inside is hidden */
+    overflow: visible;
     background: #12121e;
 }
 

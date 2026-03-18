@@ -3,7 +3,8 @@
     flex-direction: column;
     background: #12121e;
     border-radius: 8px;
-    overflow: hidden;
+    /* Do NOT use overflow: hidden — it clips the scrollbar */
+    height: 100%;
 }
 
 .timeline-toolbar {
@@ -56,6 +57,8 @@
 }
 
 .timeline-scroll-container {
+    flex: 1;
+    min-height: 0;
     overflow-x: auto;
     overflow-y: hidden;
     cursor: crosshair;
