@@ -3,6 +3,7 @@ import { useVideoStore } from '../../stores/videoStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useTimelineStore } from '../../stores/timelineStore';
 import { formatTimeCompact } from '../../utils/timeFormat';
+import { detectSceneChange } from '../../services/ffmpegService';
 import './Timeline.css';
 
 function calculateSnap(time: number, snapPoints: number[], pps: number, thresholdPixels = 10): number {
@@ -71,6 +72,42 @@ export const Timeline: React.FC = () => {
     const [hoverX, setHoverX] = useState<number>(0);
 
     const segments = project?.segments || [];
+
+    // --- Auto Cut Error Detection (Background Async) ---
+    useEffect(() => {
+        if (!project || !project.videoFilePath) return;
+
+        // Find segments that actively need verification (start boundary > 0, unverified)
+        const unverified = segments.filter(s => s.startTime > 0 && s.isCutError === undefined);
+        if (unverified.length === 0) return;
+
+        let isCancelled = false;
+        
+        const runVerification = async () => {
+            for (const seg of unverified) {
+                if (isCancelled) break;
+                // Verify memory freshness since this is async
+                const currentSegments = useProjectStore.getState().project?.segments || [];
+                const stillExistsAndUnverified = currentSegments.find(s => s.id === seg.id && s.isCutError === undefined);
+                if (!stillExistsAndUnverified) continue;
+
+                // Perform the async targeted detection (0.4s window)
+                const hasCut = await detectSceneChange(project.videoFilePath, seg.startTime);
+                
+                if (isCancelled) break;
+
+                // Make sure the segment hasn't been moved by the user while we were analyzing
+                const doubleCheck = useProjectStore.getState().project?.segments.find(s => s.id === seg.id);
+                if (doubleCheck && Math.abs(doubleCheck.startTime - seg.startTime) < 0.05) {
+                    useProjectStore.getState().updateSegment(seg.id, { isCutError: !hasCut });
+                }
+            }
+        };
+
+        runVerification();
+
+        return () => { isCancelled = true; };
+    }, [project?.videoFilePath, segments]);
 
     const [isDraggingStyle, setIsDraggingStyle] = useState(false);
     const isDraggingRef = useRef(false);
@@ -299,6 +336,14 @@ export const Timeline: React.FC = () => {
             ctx.lineTo(x - 5, trackY + 4);
             ctx.closePath();
             ctx.fill();
+
+            // Draw Warning if Cut Error
+            if (seg.isCutError) {
+                ctx.fillStyle = '#ff3333';
+                ctx.font = 'bold 15px "Inter", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('!', x, trackY - 8);
+            }
         });
 
         // --- Draw playhead ---

@@ -323,3 +323,34 @@ export async function exportClip(
     const output = await cmd.execute();
     if (output.code !== 0) throw new Error(`Clip export failed: ${output.stderr}`);
 }
+
+/**
+ * Perform a targeted scene-cut detection around a specific timestamp.
+ * Decodes only a 0.4s window (roughly ±0.2s from the cut point).
+ * Returns true if a significant scene change is found.
+ */
+export async function detectSceneChange(videoPath: string, timestamp: number): Promise<boolean> {
+    const start = Math.max(0, timestamp - 0.2);
+    
+    // Use select filter to drop frames without a significant scene change (> 20%),
+    // then pass the remaining frames to showinfo which logs them.
+    const cmd = Command.sidecar('bin/ffmpeg', [
+        '-v', 'info',
+        '-ss', start.toString(),
+        '-t', '0.4',
+        '-i', videoPath,
+        '-filter:v', "select='gt(scene,0.2)',showinfo",
+        '-f', 'null',
+        '-'
+    ]);
+    
+    try {
+        const output = await cmd.execute();
+        // If there was a scene change, showinfo will log "Parsed_showinfo_"
+        const hasSceneChange = output.stderr.includes('Parsed_showinfo_') || output.stdout.includes('Parsed_showinfo_');
+        return hasSceneChange;
+    } catch (err) {
+        console.warn(`[detectSceneChange] FFmpeg probing failed:`, err);
+        return true; // Assume true on error so we don't annoy the user with false positive warnings
+    }
+}

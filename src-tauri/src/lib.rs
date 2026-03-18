@@ -16,6 +16,8 @@ pub struct Segment {
     pub end_time: f64,
     pub description: String,
     pub category: String,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "isCutError")]
+    pub is_cut_error: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
