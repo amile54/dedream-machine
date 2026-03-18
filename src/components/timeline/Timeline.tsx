@@ -314,6 +314,7 @@ export const Timeline: React.FC = () => {
                 setSelectedSegmentId(clickedSeg.id);
             }
         }
+        // Only capture pointer when actively scrubbing (not for scrollbar)
         canvasRef.current.setPointerCapture(e.pointerId);
     }, [duration, scrollLeft, pixelsPerSecond, segments, seekTo, setSelectedSegmentId]);
 
@@ -379,7 +380,9 @@ export const Timeline: React.FC = () => {
         isDraggingRef.current = false;
         draggingCutPointIndexRef.current = null;
         setIsDraggingStyle(false);
-        if (canvasRef.current) canvasRef.current.releasePointerCapture(e.pointerId);
+        if (canvasRef.current) {
+            try { canvasRef.current.releasePointerCapture(e.pointerId); } catch { /* may not have capture */ }
+        }
     }, []);
 
     // Handle Keyboard Deletions for Cut Points
@@ -488,7 +491,7 @@ export const Timeline: React.FC = () => {
                     <canvas
                         ref={canvasRef}
                         className="timeline-canvas"
-                        style={{ width: '100%', height: TOTAL_HEIGHT, touchAction: 'none', cursor: 'crosshair' }}
+                        style={{ width: '100%', height: TOTAL_HEIGHT, touchAction: 'pan-x', cursor: 'crosshair' }}
                         onPointerDown={handlePointerDown}
                         onPointerMove={handlePointerMove}
                         onPointerUp={handlePointerUp}

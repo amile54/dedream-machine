@@ -62,7 +62,7 @@
 }
 
 .timeline-scroll-container::-webkit-scrollbar {
-    height: 6px;
+    height: 10px;
 }
 
 .timeline-scroll-container::-webkit-scrollbar-track {
