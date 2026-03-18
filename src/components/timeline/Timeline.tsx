@@ -440,9 +440,16 @@ export const Timeline: React.FC = () => {
             anchorTime = (sl + anchorMouseX) / pixelsPerSecond;
             viewOffset = anchorMouseX;
         } else {
-            // Anchor to the CENTER OF THE VIEWPORT
-            viewOffset = containerWidth / 2;
-            anchorTime = (sl + viewOffset) / pixelsPerSecond;
+            // User requested: Always anchor zoom to the playhead (currentTime),
+            // so the timeline expands/contracts around the current playback position.
+            anchorTime = currentTime;
+            viewOffset = (currentTime * pixelsPerSecond) - sl;
+
+            // If zooming while playhead is way offscreen, gently pull it back
+            // so we don't zoom into an empty void where the playhead can't be seen.
+            if (viewOffset < 0 || viewOffset > containerWidth) {
+                viewOffset = containerWidth / 2;
+            }
         }
 
         let newScrollLeft = Math.max(0, anchorTime * clamped - viewOffset);
