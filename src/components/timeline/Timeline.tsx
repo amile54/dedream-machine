@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback, useState } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useCallback, useState } from 'react';
 import { useVideoStore } from '../../stores/videoStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useTimelineStore } from '../../stores/timelineStore';
@@ -545,30 +545,29 @@ export const Timeline: React.FC = () => {
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [selectedCutPointIndex, removeCutPoint]);
 
-    // --- Zoom: anchor on playhead, keep it at its current screen position ---
+    // Pending scroll position to apply after React commits the new DOM
+    const pendingScrollRef = useRef<number | null>(null);
+
+    // useLayoutEffect runs synchronously AFTER React updates the DOM,
+    // so the wrapper width is already correct at this point.
+    useLayoutEffect(() => {
+        if (pendingScrollRef.current !== null && containerRef.current) {
+            containerRef.current.scrollLeft = pendingScrollRef.current;
+            pendingScrollRef.current = null;
+        }
+    });
+
+    // --- Zoom: center playhead on screen ---
     const performZoom = useCallback((newPps: number) => {
         if (!containerRef.current) return;
         const clamped = Math.max(MIN_PPS, Math.min(MAX_PPS, newPps));
-        const pps = pixelsPerSecondRef.current;
         const ct = currentTimeRef.current;
-        const sl = containerRef.current.scrollLeft;
+        const halfView = containerRef.current.clientWidth / 2;
 
-        // Where is the playhead on screen right now? (pixels from left edge of viewport)
-        const screenX = ct * pps - sl;
-
-        // Update React state
+        // Just center the playhead. Simple.
+        pendingScrollRef.current = Math.max(0, ct * clamped - halfView);
         setPixelsPerSecond(clamped);
-
-        // Force the wrapper wide enough so the browser accepts the new scrollLeft
-        const wrapper = containerRef.current.firstElementChild as HTMLElement;
-        if (wrapper) {
-            wrapper.style.width = `${Math.max(duration * clamped, containerRef.current.clientWidth)}px`;
-        }
-
-        // Set scrollLeft so playhead stays at the same screenX
-        containerRef.current.scrollLeft = Math.max(0, ct * clamped - screenX);
-        draw();
-    }, [setPixelsPerSecond, duration, draw]);
+    }, [setPixelsPerSecond]);
 
     // Fit entire timeline in view
     const zoomFitAll = useCallback(() => {
