@@ -59,6 +59,8 @@ pub struct Asset {
     pub created_at: String,
     #[serde(default)]
     pub files: Vec<AssetFile>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "subProjectData")]
+    pub sub_project_data: Option<Box<Project>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

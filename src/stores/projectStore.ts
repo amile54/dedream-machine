@@ -43,6 +43,12 @@ interface ProjectState {
     // Proxy
     setProxyFilePath: (path: string) => void;
     setSubtitleFilePath: (path: string | undefined) => void;
+
+    // Sub-project Context Switching
+    rootProject: Project | null;
+    activeAssetId: string | null;
+    enterSubProject: (assetId: string) => void;
+    exitSubProject: () => void;
 }
 
 function recalculateSegments(cutPoints: number[], videoDuration: number): Segment[] {
@@ -71,13 +77,15 @@ function extractCutPoints(segments: Segment[]): number[] {
 export const useProjectStore = create<ProjectState>((set, get) => ({
     workspace: null,
     project: null,
+    rootProject: null,
+    activeAssetId: null,
     isDirty: false,
     isLoading: false,
     undoStack: [],
 
     setWorkspace: (path) => set({ workspace: path }),
 
-    setProject: (project) => set({ project, isDirty: false, undoStack: [] }),
+    setProject: (project) => set({ project, rootProject: null, activeAssetId: null, isDirty: false, undoStack: [] }),
 
     createNewProject: (videoFilePath) => {
         const now = new Date().toISOString();
@@ -90,7 +98,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             updatedAt: now,
             metadata: { title: '', sourceUrl: '', videoId: '' }
         };
-        set({ project, isDirty: true, undoStack: [] });
+        set({ project, rootProject: null, activeAssetId: null, isDirty: true, undoStack: [] });
     },
 
     markDirty: () => set({ isDirty: true }),
@@ -354,12 +362,24 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     },
 
     saveProject: async () => {
-        const { workspace, project } = get();
+        const { workspace, project, rootProject, activeAssetId } = get();
         if (!workspace || !project) return;
 
         try {
+            // If we are currently inside a nested sub-project, we must sync our local project state 
+            // back into the root project's asset tree before saving to disk.
+            let projectToSave = project;
+            if (rootProject && activeAssetId) {
+                const updatedRoot = { ...rootProject };
+                updatedRoot.assets = updatedRoot.assets.map(a => 
+                    a.id === activeAssetId ? { ...a, subProjectData: { ...project } } : a
+                );
+                projectToSave = updatedRoot;
+            } else {
+                projectToSave = { ...project };
+            }
+
             // Convert proxyFilePath to relative for portability
-            const projectToSave = { ...project };
             if (projectToSave.proxyFilePath && projectToSave.proxyFilePath.startsWith(workspace)) {
                 // Extract the relative part (e.g. "/Users/me/project/proxy.mp4" -> "proxy.mp4")
                 let relative = projectToSave.proxyFilePath.slice(workspace.length);
@@ -388,10 +408,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
                     const sep = workspace.includes('\\') ? '\\' : '/';
                     project.proxyFilePath = workspace + sep + project.proxyFilePath;
                 }
-                set({ workspace, project, isDirty: false, isLoading: false, undoStack: [] });
+                set({ workspace, project, rootProject: null, activeAssetId: null, isDirty: false, isLoading: false, undoStack: [] });
                 return true;
             }
-            set({ workspace, isLoading: false, undoStack: [] });
+            set({ workspace, rootProject: null, activeAssetId: null, isLoading: false, undoStack: [] });
             return false;
         } catch (err) {
             console.error('Failed to load project:', err);
@@ -437,10 +457,49 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         if (!folder) return;
 
         // Reset state and load new project
-        set({ workspace: null, project: null, isDirty: false, undoStack: [] });
+        set({ workspace: null, project: null, rootProject: null, activeAssetId: null, isDirty: false, undoStack: [] });
         const hasExisting = await loadProject(folder as string);
         if (!hasExisting) {
             set({ workspace: folder as string });
         }
     },
+
+    enterSubProject: (assetId: string) => {
+        const { project, rootProject } = get();
+        if (!project || rootProject) return; // Prevent double nesting for now
+
+        const targetAsset = project.assets.find(a => a.id === assetId);
+        if (!targetAsset || targetAsset.category !== 'segment_analysis') return;
+
+        if (targetAsset.subProjectData) {
+            // Already has nested data, just swap the pointers
+            set({
+                rootProject: project,
+                project: targetAsset.subProjectData,
+                activeAssetId: assetId,
+                undoStack: [],
+                isDirty: false // isDirty reflects whether the current view has unsaved changes
+            });
+        }
+    },
+
+    exitSubProject: () => {
+        const { project, rootProject, activeAssetId, isDirty } = get();
+        if (!rootProject || !activeAssetId || !project) return;
+
+        // Sync the modified sub-project back into the root project
+        const updatedRoot = { ...rootProject };
+        updatedRoot.assets = updatedRoot.assets.map(a => 
+            a.id === activeAssetId ? { ...a, subProjectData: project } : a
+        );
+
+        set({
+            rootProject: null,
+            project: updatedRoot,
+            activeAssetId: null,
+            undoStack: [],
+            // If the sub-project was dirty, we inherit that dirtiness so the user knows to save
+            isDirty: isDirty || get().isDirty 
+        });
+    }
 }));

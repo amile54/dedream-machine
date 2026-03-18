@@ -16,6 +16,8 @@ export const MainLayout: React.FC = () => {
     const isDirty = useProjectStore(s => s.isDirty);
     const saveProject = useProjectStore(s => s.saveProject);
     const switchProject = useProjectStore(s => s.switchProject);
+    const activeAssetId = useProjectStore(s => s.activeAssetId);
+    const exitSubProject = useProjectStore(s => s.exitSubProject);
 
     const [isAssetSidebarOpen, setIsAssetSidebarOpen] = useState(true);
 
@@ -103,6 +105,16 @@ export const MainLayout: React.FC = () => {
                     <button className="save-btn" onClick={saveProject} title="保存 (Cmd+S)">
                         💾 保存
                     </button>
+                    {activeAssetId && (
+                        <button
+                            className="save-btn"
+                            style={{ backgroundColor: '#e53935', color: '#fff', marginLeft: '1rem', fontWeight: 'bold' }}
+                            onClick={() => exitSubProject()}
+                            title="退出拉片环境，返回全片主界面的完整项目"
+                        >
+                            🔙 返回主界面全片环境
+                        </button>
+                    )}
                 </div>
             </div>
 

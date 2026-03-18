@@ -45,6 +45,7 @@ export interface Asset {
   description: string;
   createdAt: string;
   files: AssetFile[];
+  subProjectData?: Project; // Nested analysis project data
 }
 
 export interface Project {

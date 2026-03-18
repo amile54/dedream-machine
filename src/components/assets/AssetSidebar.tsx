@@ -143,6 +143,17 @@ export const AssetSidebar: React.FC = () => {
                                                                     onChange={(e) => updateAsset(asset.id, { description: e.target.value })}
                                                                     rows={4}
                                                                 />
+                                                                {asset.category === 'segment_analysis' && asset.subProjectData && (
+                                                                    <button 
+                                                                        className="enter-analysis-btn"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            useProjectStore.getState().enterSubProject(asset.id);
+                                                                        }}
+                                                                    >
+                                                                        🔍 进入深入拉片环境
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         )}
                                                     </div>

@@ -291,6 +291,28 @@ export const VideoPlayer: React.FC = () => {
                 const relativePath = `assets/${asset.category}/${asset.name}/${filename}`;
                 addFileToAsset(asset.id, { path: relativePath, timestamp: clipStartTime, type: isAudio ? 'audio' : 'clip' });
 
+                if (asset.category === 'segment_analysis' && !isAudio) {
+                    const now = new Date().toISOString();
+                    const subProject = {
+                        videoFilePath: outputPath,
+                        proxyFilePath: outputPath, // The exported clip is already a web-compatible mp4
+                        segments: [{
+                            id: crypto.randomUUID(),
+                            index: 1,
+                            startTime: 0,
+                            endTime: clipEndTime - clipStartTime,
+                            description: '',
+                            category: '',
+                        }],
+                        textBlocks: [],
+                        assets: [],
+                        createdAt: now,
+                        updatedAt: now,
+                        metadata: { title: `${project?.metadata?.title || '片段'} - ${asset.name}`, sourceUrl: '', videoId: '' }
+                    };
+                    useProjectStore.getState().updateAsset(asset.id, { subProjectData: subProject });
+                }
+
                 showToast(`提取成功！${isAudio ? '音频' : '视频'}已保存至 ${asset.name} 资产`);
             }
         } catch (err) {
