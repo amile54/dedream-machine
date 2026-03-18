@@ -258,16 +258,25 @@ export const VideoPlayer: React.FC = () => {
         if (!workspace || !project?.videoFilePath) return;
 
         try {
+            const state = useProjectStore.getState();
+            const pathParts = ['assets', asset.category, asset.name];
+            if (state.rootProject && state.activeAssetId) {
+                const parent = state.rootProject.assets.find(a => a.id === state.activeAssetId);
+                if (parent) {
+                    pathParts.unshift('assets', 'segment_analysis', parent.name);
+                }
+            }
+
             if (modalMode === 'screenshot') {
                 const timestamp = currentTime;
                 const baseName = options?.customFilename || `${asset.name}_${new Date().toISOString().replace(/[:.]/g, '-')}`;
                 const filename = baseName.endsWith('.png') ? baseName : `${baseName}.png`;
-                const outputPath = await join(workspace, 'assets', asset.category, asset.name, filename);
+                const outputPath = await join(workspace, ...pathParts, filename);
 
                 await takeScreenshot(project.videoFilePath, timestamp, outputPath);
 
                 // Record file to asset
-                const relativePath = `assets/${asset.category}/${asset.name}/${filename}`;
+                const relativePath = [...pathParts, filename].join('/');
                 addFileToAsset(asset.id, { path: relativePath, timestamp, type: 'screenshot' });
 
                 showToast(`提取成功！截图已保存至 ${asset.name} 资产`);
@@ -277,7 +286,7 @@ export const VideoPlayer: React.FC = () => {
                 const ext = isAudio ? 'mp3' : 'mp4';
                 const baseName = options?.customFilename || `${asset.name}_${isAudio ? 'audio' : 'clip'}_${new Date().toISOString().replace(/[:.]/g, '-')}`;
                 const filename = baseName.endsWith(`.${ext}`) ? baseName : `${baseName}.${ext}`;
-                const outputPath = await join(workspace, 'assets', asset.category, asset.name, filename);
+                const outputPath = await join(workspace, ...pathParts, filename);
 
                 const { invoke } = await import('@tauri-apps/api/core');
                 await invoke('ensure_workspace_dirs', { workspace }); // optional safety
@@ -288,7 +297,7 @@ export const VideoPlayer: React.FC = () => {
                 await exportClip(project.videoFilePath, clipStartTime, clipEndTime, outputPath, isAudio);
 
                 // Record file to asset
-                const relativePath = `assets/${asset.category}/${asset.name}/${filename}`;
+                const relativePath = [...pathParts, filename].join('/');
                 addFileToAsset(asset.id, { path: relativePath, timestamp: clipStartTime, type: isAudio ? 'audio' : 'clip' });
 
                 if (asset.category === 'segment_analysis' && !isAudio) {
