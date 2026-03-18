@@ -168,7 +168,10 @@ export const VideoPlayer: React.FC = () => {
             filters: [
                 {
                     name: '视频文件',
-                    extensions: ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'm4v'],
+                    extensions: [
+                        'mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'm4v',
+                        'rmvb', 'rm', 'ts', 'm2ts', 'vob', 'mpg', 'mpeg', '3gp', 'asf'
+                    ],
                 },
             ],
         });
