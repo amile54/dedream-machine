@@ -76,8 +76,10 @@ export const Timeline: React.FC = () => {
     const isDraggingRef = useRef(false);
 
     // Store refs for use in document-level event handlers
+    // NOTE: pixelsPerSecondRef is the SINGLE SOURCE OF TRUTH for zoom level.
+    // It is ONLY updated inside performZoom(). Never overwrite it from React state,
+    // because React state lags behind during rapid zoom and would reset the ref to stale values.
     const pixelsPerSecondRef = useRef(pixelsPerSecond);
-    pixelsPerSecondRef.current = pixelsPerSecond;
     const durationRef = useRef(duration);
     durationRef.current = duration;
     const segmentsRef = useRef(segments);
@@ -302,7 +304,8 @@ export const Timeline: React.FC = () => {
         segmentsRef.current = segments;
         durationRef.current = duration;
         currentTimeRef.current = currentTime;
-        pixelsPerSecondRef.current = pixelsPerSecond;
+        // NOTE: Do NOT overwrite pixelsPerSecondRef here — it is the authoritative source
+        // and is only updated synchronously inside performZoom().
         
         // Priority queuing: Latest visible goes first (LIFO array behavior)
         extractionQueueRef.current = newVisibleThumbs.reverse();
@@ -530,8 +533,6 @@ export const Timeline: React.FC = () => {
         setHoverCutPointIndex(null);
     }, []);
 
-    // --- Zoom: Playhead Anchoring (Industry Standard) ---
-    // --- Zoom: Smart Anchoring (JianYing/FCP Standard) ---
     // --- Zoom: Smart Anchoring (JianYing/FCP Standard) ---
     const performZoom = useCallback((newPps: number) => {
         if (!containerRef.current) return;
@@ -641,7 +642,7 @@ export const Timeline: React.FC = () => {
                 <div className="timeline-zoom">
                     <button
                         className="zoom-btn"
-                        onClick={() => performZoom(pixelsPerSecond / 2)}
+                        onClick={() => performZoom(pixelsPerSecondRef.current / 2)}
                         title="缩小"
                     >
                         −
@@ -657,7 +658,7 @@ export const Timeline: React.FC = () => {
                     <span className="zoom-level">{pixelsPerSecond < 1 ? pixelsPerSecond.toFixed(2) : Math.round(pixelsPerSecond)}px/s</span>
                     <button
                         className="zoom-btn"
-                        onClick={() => performZoom(pixelsPerSecond * 2)}
+                        onClick={() => performZoom(pixelsPerSecondRef.current * 2)}
                         title="放大"
                     >
                         +
