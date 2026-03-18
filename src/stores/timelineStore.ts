@@ -13,9 +13,9 @@ interface TimelineState {
     setHoveredTime: (time: number | null) => void;
 }
 
-const MIN_PPS = 0.1; // Allows 2 hour movie to fit on 720px screen
-const MAX_PPS = 200;
-const ZOOM_FACTOR = 1.3;
+const MIN_PPS = 0.01; // Fits 3hr+ movie in viewport
+const MAX_PPS = 500;   // Frame-level editing
+const ZOOM_FACTOR = 2; // 2x per click (industry standard)
 
 export const useTimelineStore = create<TimelineState>((set, get) => ({
     pixelsPerSecond: 20,

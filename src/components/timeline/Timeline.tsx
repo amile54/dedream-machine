@@ -19,6 +19,10 @@ const RULER_HEIGHT = 24;
 const TRACK_HEIGHT = 50;
 const TOTAL_HEIGHT = RULER_HEIGHT + TRACK_HEIGHT + 10;
 
+// Zoom constraints — 0.01 pps lets a 3hr movie fit in ~108px, 500 allows frame-level editing
+const MIN_PPS = 0.01;
+const MAX_PPS = 500;
+
 export const Timeline: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -37,9 +41,6 @@ export const Timeline: React.FC = () => {
     const setSelectedSegmentId = useTimelineStore(s => s.setSelectedSegmentId);
     const setPixelsPerSecond = useTimelineStore(s => s.setPixelsPerSecond);
 
-    // Read scroll position directly from DOM — no Zustand store, no feedback loop
-    const getScrollLeft = useCallback(() => containerRef.current?.scrollLeft || 0, []);
-
     const moveCutPoint = useProjectStore(s => s.moveCutPoint);
     const removeCutPoint = useProjectStore(s => s.removeCutPoint);
 
@@ -53,6 +54,19 @@ export const Timeline: React.FC = () => {
 
     const segments = project?.segments || [];
 
+    const [isDraggingStyle, setIsDraggingStyle] = useState(false);
+    const isDraggingRef = useRef(false);
+
+    // Store refs for use in document-level event handlers
+    const pixelsPerSecondRef = useRef(pixelsPerSecond);
+    pixelsPerSecondRef.current = pixelsPerSecond;
+    const durationRef = useRef(duration);
+    durationRef.current = duration;
+    const segmentsRef = useRef(segments);
+    segmentsRef.current = segments;
+    const currentTimeRef = useRef(currentTime);
+    currentTimeRef.current = currentTime;
+
     // Colors for segments (cycle through palette)
     const segmentColors = [
         'rgba(80, 120, 200, 0.5)',
@@ -65,7 +79,8 @@ export const Timeline: React.FC = () => {
         'rgba(80, 140, 200, 0.5)',
     ];
 
-    const draw = useCallback((scrollLeftOverride?: number) => {
+    // --- Draw ---
+    const draw = useCallback(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
@@ -80,6 +95,7 @@ export const Timeline: React.FC = () => {
 
         const width = rect.width;
         const height = rect.height;
+        const sl = containerRef.current?.scrollLeft || 0;
 
         // Clear
         ctx.fillStyle = '#12121e';
@@ -93,7 +109,8 @@ export const Timeline: React.FC = () => {
 
         // Calculate tick interval based on zoom
         let tickInterval = 1;
-        if (pixelsPerSecond < 0.2) tickInterval = 1800; // 30 mins
+        if (pixelsPerSecond < 0.05) tickInterval = 3600; // 1 hour
+        else if (pixelsPerSecond < 0.2) tickInterval = 1800; // 30 mins
         else if (pixelsPerSecond < 0.5) tickInterval = 600; // 10 mins
         else if (pixelsPerSecond < 1) tickInterval = 300; // 5 mins
         else if (pixelsPerSecond < 2) tickInterval = 120; // 2 mins
@@ -103,7 +120,6 @@ export const Timeline: React.FC = () => {
         else if (pixelsPerSecond < 50) tickInterval = 5;
         else if (pixelsPerSecond < 100) tickInterval = 2;
 
-        const sl = scrollLeftOverride ?? getScrollLeft();
         const startTime = Math.floor(sl / pixelsPerSecond / tickInterval) * tickInterval;
         const endTime = Math.ceil((sl + width) / pixelsPerSecond);
 
@@ -241,23 +257,22 @@ export const Timeline: React.FC = () => {
             ctx.closePath();
             ctx.fill();
         }
-    }, [duration, currentTime, pixelsPerSecond, getScrollLeft, segments, selectedSegmentId, hoverCutPointIndex, selectedCutPointIndex]);
+    }, [duration, currentTime, pixelsPerSecond, segments, selectedSegmentId, hoverCutPointIndex, selectedCutPointIndex]);
 
-    // Animation loop & Auto-panning during playback
-    // NOTE: No dependency on scrollLeft — we read it from DOM each frame
+    // --- Animation loop (no scroll state dependency) ---
     useEffect(() => {
         const animate = () => {
-            const sl = getScrollLeft();
-            draw(sl);
+            draw();
 
             // Auto-pan if playing and playhead approaches the right edge
             if (!isDraggingRef.current && containerRef.current) {
-                const headX = useVideoStore.getState().currentTime * pixelsPerSecond - sl;
+                const sl = containerRef.current.scrollLeft;
+                const headX = useVideoStore.getState().currentTime * pixelsPerSecondRef.current - sl;
                 const viewWidth = containerRef.current.clientWidth;
                 if (headX > viewWidth * 0.9 && headX < viewWidth * 1.5) {
                     containerRef.current.scrollLeft += 3;
                 } else if (headX > viewWidth * 1.5 || headX < 0) {
-                    containerRef.current.scrollLeft = (useVideoStore.getState().currentTime * pixelsPerSecond) - (viewWidth / 2);
+                    containerRef.current.scrollLeft = (useVideoStore.getState().currentTime * pixelsPerSecondRef.current) - (viewWidth / 2);
                 }
             }
 
@@ -265,24 +280,19 @@ export const Timeline: React.FC = () => {
         };
         animFrameRef.current = requestAnimationFrame(animate);
         return () => cancelAnimationFrame(animFrameRef.current);
-    }, [draw, pixelsPerSecond, getScrollLeft]);
+    }, [draw]);
 
-    const [isDraggingStyle, setIsDraggingStyle] = useState(false);
-    const isDraggingRef = useRef(false);
-
-    // Handle click and drag to scrub/edit
+    // --- Pointer event handlers using document-level listeners ---
+    // NO setPointerCapture — the scrollbar remains fully independent
     const handlePointerDown = useCallback((e: React.PointerEvent) => {
         if (!canvasRef.current || duration <= 0) return;
-
-        // Don't steal clicks from the native scrollbar (bottom ~16px of container)
-        if (containerRef.current) {
-            const containerRect = containerRef.current.getBoundingClientRect();
-            if (e.clientY > containerRect.bottom - 16) return;
-        }
+        // Only handle left mouse button
+        if (e.button !== 0) return;
 
         const rect = canvasRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
-        const time = (x + getScrollLeft()) / pixelsPerSecond;
+        const sl = containerRef.current?.scrollLeft || 0;
+        const time = (x + sl) / pixelsPerSecond;
 
         // 1. Check if we clicked on a Cut Point
         const existingCutPoints = segments.slice(1).map(s => s.startTime);
@@ -291,69 +301,85 @@ export const Timeline: React.FC = () => {
         const clickedIdx = existingCutPoints.findIndex(cp => Math.abs(cp - time) <= timeThreshold);
 
         if (clickedIdx !== -1) {
-            // Initiate cut point drag
             draggingCutPointIndexRef.current = clickedIdx;
             setSelectedCutPointIndex(clickedIdx);
             setSelectedSegmentId(null);
-            canvasRef.current.setPointerCapture(e.pointerId);
-            return;
-        }
+        } else {
+            // 2. Scrub playhead
+            isDraggingRef.current = true;
+            setIsDraggingStyle(true);
+            setSelectedCutPointIndex(null);
 
-        // 2. Otherwise scrub playhead
-        isDraggingRef.current = true;
-        setIsDraggingStyle(true);
-        setSelectedCutPointIndex(null);
+            if (time >= 0 && time <= duration) {
+                const snappedTime = calculateSnap(time, existingCutPoints, pixelsPerSecond);
+                seekTo(Math.max(0, Math.min(duration, snappedTime)));
 
-        if (time >= 0 && time <= duration) {
-            const snappedTime = calculateSnap(time, existingCutPoints, pixelsPerSecond);
-            seekTo(Math.max(0, Math.min(duration, snappedTime)));
-
-            // Check if clicked exactly on a segment to select it
-            const clickedSeg = segments.find(
-                s => time >= s.startTime && time < s.endTime
-            );
-            if (clickedSeg) {
-                setSelectedSegmentId(clickedSeg.id);
+                const clickedSeg = segments.find(
+                    s => time >= s.startTime && time < s.endTime
+                );
+                if (clickedSeg) {
+                    setSelectedSegmentId(clickedSeg.id);
+                }
             }
         }
-        // Only capture pointer when actively scrubbing (not for scrollbar)
-        canvasRef.current.setPointerCapture(e.pointerId);
-    }, [duration, getScrollLeft, pixelsPerSecond, segments, seekTo, setSelectedSegmentId]);
 
+        // Attach document-level listeners for move/up
+        const onDocPointerMove = (ev: PointerEvent) => {
+            if (!canvasRef.current) return;
+            const r = canvasRef.current.getBoundingClientRect();
+            let targetX = ev.clientX - r.left;
+            const currentSl = containerRef.current?.scrollLeft || 0;
+            let t = (targetX + currentSl) / pixelsPerSecondRef.current;
+            const pts = segmentsRef.current.slice(1).map(s => s.startTime);
+
+            // A. Dragging a cut point
+            if (draggingCutPointIndexRef.current !== null) {
+                const otherPoints = [currentTimeRef.current, ...pts.filter((_, i) => i !== draggingCutPointIndexRef.current)];
+                const snapped = calculateSnap(t, otherPoints, pixelsPerSecondRef.current);
+                moveCutPoint(draggingCutPointIndexRef.current, Math.max(0.1, Math.min(durationRef.current, snapped)));
+                return;
+            }
+
+            // B. Scrubbing playhead
+            if (isDraggingRef.current) {
+                // Auto-scroll at edges
+                const edgeThreshold = 40;
+                const maxScroll = (durationRef.current * pixelsPerSecondRef.current) - (containerRef.current?.clientWidth || 0);
+
+                if (targetX < edgeThreshold && currentSl > 0) {
+                    containerRef.current!.scrollLeft = Math.max(0, currentSl - 15);
+                } else if (targetX > r.width - edgeThreshold && currentSl < maxScroll) {
+                    containerRef.current!.scrollLeft = Math.min(maxScroll, currentSl + 15);
+                }
+
+                const snapped = calculateSnap(t, pts, pixelsPerSecondRef.current);
+                seekTo(Math.max(0, Math.min(durationRef.current, snapped)));
+            }
+        };
+
+        const onDocPointerUp = () => {
+            isDraggingRef.current = false;
+            draggingCutPointIndexRef.current = null;
+            setIsDraggingStyle(false);
+            document.removeEventListener('pointermove', onDocPointerMove);
+            document.removeEventListener('pointerup', onDocPointerUp);
+        };
+
+        document.addEventListener('pointermove', onDocPointerMove);
+        document.addEventListener('pointerup', onDocPointerUp);
+    }, [duration, pixelsPerSecond, segments, seekTo, setSelectedSegmentId, moveCutPoint]);
+
+    // Canvas hover handler (only for hover state — no drag logic)
     const handlePointerMove = useCallback((e: React.PointerEvent) => {
         if (!canvasRef.current || duration <= 0) return;
+        // Skip hover updates while dragging (document-level handler takes over)
+        if (isDraggingRef.current || draggingCutPointIndexRef.current !== null) return;
+
         const rect = canvasRef.current.getBoundingClientRect();
-        let targetX = e.clientX - rect.left;
-        const sl = getScrollLeft();
-        let time = (targetX + sl) / pixelsPerSecond;
-        const existingCutPoints = segments.slice(1).map(s => s.startTime);
+        const targetX = e.clientX - rect.left;
+        const sl = containerRef.current?.scrollLeft || 0;
+        const time = (targetX + sl) / pixelsPerSecond;
 
-        // A. If dragging a cut point
-        if (draggingCutPointIndexRef.current !== null) {
-            const otherPoints = [currentTime, ...existingCutPoints.filter((_, i) => i !== draggingCutPointIndexRef.current)];
-            const snappedTime = calculateSnap(time, otherPoints, pixelsPerSecond);
-            moveCutPoint(draggingCutPointIndexRef.current, Math.max(0.1, Math.min(duration, snappedTime)));
-            return;
-        }
-
-        // B. If scrubbing playhead
-        if (isDraggingRef.current) {
-            // Auto-scrolling logic
-            const edgeThreshold = 40;
-            const maxScroll = (duration * pixelsPerSecond) - (containerRef.current?.clientWidth || 0);
-
-            if (targetX < edgeThreshold && sl > 0) {
-                containerRef.current!.scrollLeft = Math.max(0, sl - 15);
-            } else if (targetX > rect.width - edgeThreshold && sl < maxScroll) {
-                containerRef.current!.scrollLeft = Math.min(maxScroll, sl + 15);
-            }
-
-            const snappedTime = calculateSnap(time, existingCutPoints, pixelsPerSecond);
-            seekTo(Math.max(0, Math.min(duration, snappedTime)));
-            return;
-        }
-
-        // C. Just hovering
         setHoverTime(time);
         setHoverX(e.clientX);
 
@@ -362,6 +388,7 @@ export const Timeline: React.FC = () => {
             thumbVideoRef.current.currentTime = time;
         }
 
+        const existingCutPoints = segments.slice(1).map(s => s.startTime);
         const PIXEL_THRESHOLD = 5;
         const hoveredIdx = existingCutPoints.findIndex(cp => Math.abs(cp - time) <= (PIXEL_THRESHOLD / pixelsPerSecond));
 
@@ -372,20 +399,11 @@ export const Timeline: React.FC = () => {
             setHoverCutPointIndex(null);
             canvasRef.current.style.cursor = 'crosshair';
         }
-    }, [duration, getScrollLeft, pixelsPerSecond, seekTo, segments, moveCutPoint, currentTime]);
+    }, [duration, pixelsPerSecond, segments]);
 
     const handlePointerLeave = useCallback(() => {
         setHoverTime(null);
         setHoverCutPointIndex(null);
-    }, []);
-
-    const handlePointerUp = useCallback((e: React.PointerEvent) => {
-        isDraggingRef.current = false;
-        draggingCutPointIndexRef.current = null;
-        setIsDraggingStyle(false);
-        if (canvasRef.current) {
-            try { canvasRef.current.releasePointerCapture(e.pointerId); } catch { /* may not have capture */ }
-        }
     }, []);
 
     // Handle Keyboard Deletions for Cut Points
@@ -403,16 +421,12 @@ export const Timeline: React.FC = () => {
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [selectedCutPointIndex, removeCutPoint]);
 
-    // Handle scroll — no-op, DOM is source of truth.
-    // The animation loop reads containerRef.current.scrollLeft each frame.
-    const handleScroll = useCallback(() => {
-        // Nothing to do — animation loop picks up new scrollLeft from DOM
-    }, []);
-
+    // --- Zoom ---
     const performZoom = useCallback((newPps: number, anchorMouseX?: number) => {
         if (!containerRef.current) return;
+        const clamped = Math.max(MIN_PPS, Math.min(MAX_PPS, newPps));
         const containerWidth = containerRef.current.clientWidth;
-        const sl = getScrollLeft();
+        const sl = containerRef.current.scrollLeft;
 
         let anchorTime: number;
         let viewOffset: number;
@@ -429,19 +443,27 @@ export const Timeline: React.FC = () => {
             }
         }
 
-        const newScrollLeft = Math.max(0, anchorTime * newPps - viewOffset);
+        const newScrollLeft = Math.max(0, anchorTime * clamped - viewOffset);
 
-        setPixelsPerSecond(newPps);
-        // Write directly to DOM — animation loop reads it next frame
+        setPixelsPerSecond(clamped);
         containerRef.current.scrollLeft = newScrollLeft;
-    }, [pixelsPerSecond, getScrollLeft, currentTime, setPixelsPerSecond]);
+    }, [pixelsPerSecond, currentTime, setPixelsPerSecond]);
 
-    // Handle wheel for zoom
+    // Fit entire timeline in view
+    const zoomFitAll = useCallback(() => {
+        if (!containerRef.current || duration <= 0) return;
+        const fitPps = Math.max(MIN_PPS, containerRef.current.clientWidth / duration * 0.95);
+        setPixelsPerSecond(fitPps);
+        containerRef.current.scrollLeft = 0;
+    }, [duration, setPixelsPerSecond]);
+
+    // Handle wheel for zoom — Ctrl/Cmd + scroll
     const handleWheel = useCallback((e: React.WheelEvent) => {
         if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
             const delta = e.deltaY > 0 ? -1 : 1;
-            const newPps = Math.max(0.1, Math.min(200, pixelsPerSecond * (1 + delta * 0.1)));
+            // 25% per wheel tick (industry standard feels)
+            const newPps = pixelsPerSecond * (1 + delta * 0.25);
 
             if (containerRef.current) {
                 const rect = containerRef.current.getBoundingClientRect();
@@ -460,16 +482,24 @@ export const Timeline: React.FC = () => {
                 <div className="timeline-zoom">
                     <button
                         className="zoom-btn"
-                        onClick={() => performZoom(pixelsPerSecond / 1.3)}
-                        title="缩小 (Cmd+-)"
+                        onClick={() => performZoom(pixelsPerSecond / 2)}
+                        title="缩小"
                     >
                         −
                     </button>
-                    <span className="zoom-level">{Math.round(pixelsPerSecond)}px/s</span>
                     <button
                         className="zoom-btn"
-                        onClick={() => performZoom(pixelsPerSecond * 1.3)}
-                        title="放大 (Cmd+=)"
+                        onClick={zoomFitAll}
+                        title="适应全部"
+                        style={{ fontSize: '10px', padding: '0 4px' }}
+                    >
+                        ⊞
+                    </button>
+                    <span className="zoom-level">{pixelsPerSecond < 1 ? pixelsPerSecond.toFixed(2) : Math.round(pixelsPerSecond)}px/s</span>
+                    <button
+                        className="zoom-btn"
+                        onClick={() => performZoom(pixelsPerSecond * 2)}
+                        title="放大"
                     >
                         +
                     </button>
@@ -478,7 +508,6 @@ export const Timeline: React.FC = () => {
             <div
                 ref={containerRef}
                 className="timeline-scroll-container"
-                onScroll={handleScroll}
                 onWheel={handleWheel}
             >
                 <div
@@ -492,7 +521,6 @@ export const Timeline: React.FC = () => {
                         style={{ width: '100%', height: TOTAL_HEIGHT, touchAction: 'pan-x', cursor: 'crosshair' }}
                         onPointerDown={handlePointerDown}
                         onPointerMove={handlePointerMove}
-                        onPointerUp={handlePointerUp}
                     />
 
                     {/* Hidden Video for Extracting Thumbnails via GPU */}
@@ -526,10 +554,6 @@ export const Timeline: React.FC = () => {
                             }}
                         >
                             <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%' }}>
-                                {/* We mirror the hidden video to a canvas or just show the video directly. 
-                                    Showing the actual video element is faster. But since we need multiple potentially, 
-                                    let's just pull the 1 hidden video and let it render here by doing a neat trick: 
-                                    Actually, we can't move the node easily. Let's draw the video frame to a Canvas background. */}
                                 <canvas
                                     width={160}
                                     height={90}
