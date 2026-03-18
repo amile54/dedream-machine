@@ -337,12 +337,12 @@ export const Timeline: React.FC = () => {
             ctx.closePath();
             ctx.fill();
 
-            // Draw Warning if Cut Error
-            if (seg.isCutError) {
-                ctx.fillStyle = '#ff3333';
-                ctx.font = 'bold 15px "Inter", sans-serif';
+            // Draw Warning if Cut Error (auto hide if zoomed out too far to prevent UI clutter)
+            if (seg.isCutError && pixelsPerSecond > 0.5) {
+                ctx.fillStyle = '#ff4444';
+                ctx.font = 'bold 11px "Inter", sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText('!', x, trackY - 8);
+                ctx.fillText('!', x, trackY - 6);
             }
         });
 

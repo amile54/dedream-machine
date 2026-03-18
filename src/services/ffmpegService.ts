@@ -347,8 +347,9 @@ export async function detectSceneChange(videoPath: string, timestamp: number): P
     
     try {
         const output = await cmd.execute();
-        // If there was a scene change, showinfo will log "Parsed_showinfo_"
-        const hasSceneChange = output.stderr.includes('Parsed_showinfo_') || output.stdout.includes('Parsed_showinfo_');
+        // showinfo logs frames like "[Parsed_showinfo_1 @ 0x...] n: 0 pts: 1 pts_time:0.12 ..."
+        // We look for "pts_time:" to ensure a frame actually passed the select filter.
+        const hasSceneChange = output.stderr.includes('pts_time:') || output.stdout.includes('pts_time:');
         return hasSceneChange;
     } catch (err) {
         console.warn(`[detectSceneChange] FFmpeg probing failed:`, err);
