@@ -26,8 +26,27 @@ const MAX_PPS = 500;
 export const Timeline: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-    const thumbVideoRef = useRef<HTMLVideoElement>(null);
+    const thumbVideoRef = useRef<HTMLVideoElement>(null); // For hover tooltip
+    const extractVideoRef = useRef<HTMLVideoElement>(null); // Dedicated for background extraction
     const animFrameRef = useRef<number>(0);
+
+    // Thumbnail Cache system
+    const thumbnailCache = useRef<Map<number, ImageBitmap>>(new Map());
+    const extractionQueueRef = useRef<number[]>([]);
+    const isExtractingRef = useRef(false);
+
+    const THUMB_WIDTH = 90;
+
+    function getThumbnailInterval(pps: number) {
+        const raw = THUMB_WIDTH / pps;
+        if (raw < 1) return 1;
+        if (raw < 2) return 2;
+        if (raw < 5) return 5;
+        if (raw < 10) return 10;
+        if (raw < 30) return 30;
+        if (raw < 60) return 60;
+        return Math.ceil(raw / 60) * 60;
+    }
 
     const duration = useVideoStore(s => s.duration);
     const currentTime = useVideoStore(s => s.currentTime);
@@ -157,47 +176,69 @@ export const Timeline: React.FC = () => {
             }
         }
 
-        // --- Draw segments ---
+        // --- Draw segments & thumbnails ---
         const trackY = RULER_HEIGHT + 4;
+        const thumbInterval = getThumbnailInterval(pixelsPerSecond);
 
         segments.forEach((seg, i) => {
             const x1 = seg.startTime * pixelsPerSecond - sl;
             const x2 = seg.endTime * pixelsPerSecond - sl;
-            const segWidth = x2 - x1;
+            const segWidth = Math.max(0, x2 - x1);
 
             if (x2 < 0 || x1 > width) return; // offscreen
 
-            // Segment block
+            // 1. Draw segment background color
             const isSelected = seg.id === selectedSegmentId;
             ctx.fillStyle = isSelected
                 ? segmentColors[i % segmentColors.length].replace('0.5', '0.7')
                 : segmentColors[i % segmentColors.length];
             ctx.fillRect(Math.max(0, x1), trackY, Math.min(segWidth, width), TRACK_HEIGHT);
 
-            // Segment border
+            // 2. Queue and draw thumbnails
+            for (let t = seg.startTime; t < seg.endTime; t += thumbInterval) {
+                const thumbX = t * pixelsPerSecond - sl;
+                const renderWidth = Math.min(THUMB_WIDTH, (seg.endTime - t) * pixelsPerSecond);
+                
+                // Only consider thumbnails that are currently visible
+                if (thumbX + renderWidth < 0 || thumbX > width) continue;
+
+                const thumbTime = Math.round(t);
+                const bmp = thumbnailCache.current.get(thumbTime);
+
+                if (bmp) {
+                    // Draw the cached image
+                    ctx.drawImage(
+                        bmp, 
+                        Math.max(0, thumbX), 
+                        trackY, 
+                        renderWidth - (thumbX < 0 ? Math.abs(thumbX) : 0), 
+                        TRACK_HEIGHT
+                    );
+                } else {
+                    // Queue for extraction if not already in queue
+                    if (!extractionQueueRef.current.includes(thumbTime)) {
+                        extractionQueueRef.current.push(thumbTime);
+                    }
+                }
+            }
+
+            // 3. Draw Segment border & Label Overlay
+            // Fill a slight gradient overlay so text remains readable over thumbnails
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.fillRect(Math.max(0, x1), trackY, Math.min(segWidth, width), TRACK_HEIGHT);
+
             ctx.strokeStyle = isSelected
-                ? 'rgba(200, 200, 255, 0.6)'
-                : 'rgba(255, 255, 255, 0.15)';
+                ? 'rgba(200, 200, 255, 0.8)'
+                : 'rgba(255, 255, 255, 0.3)';
             ctx.lineWidth = isSelected ? 2 : 1;
             ctx.strokeRect(Math.max(0, x1), trackY, Math.min(segWidth, width), TRACK_HEIGHT);
 
-            // Segment label
             if (segWidth > 30) {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
                 ctx.font = '11px "Inter", sans-serif';
                 ctx.textAlign = 'left';
                 const labelX = Math.max(4, x1 + 4);
                 ctx.fillText(`#${seg.index}`, labelX, trackY + 15);
-
-                if (segWidth > 80) {
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-                    ctx.font = '9px "SF Mono", monospace';
-                    ctx.fillText(
-                        `${formatTimeCompact(seg.startTime)}`,
-                        labelX,
-                        trackY + 28
-                    );
-                }
             }
         });
 
@@ -259,6 +300,75 @@ export const Timeline: React.FC = () => {
         }
     }, [duration, currentTime, pixelsPerSecond, segments, selectedSegmentId, hoverCutPointIndex, selectedCutPointIndex]);
 
+    // --- Async Background Thumbnail Extractor ---
+    useEffect(() => {
+        if (!proxyUrl || !extractVideoRef.current) return;
+
+        let active = true;
+
+        const processQueue = async () => {
+            if (!active || isExtractingRef.current || extractionQueueRef.current.length === 0) return;
+            
+            isExtractingRef.current = true;
+            
+            try {
+                const targetTime = extractionQueueRef.current.pop(); // LIFO prioritizes most recently rendered (visible)
+                if (targetTime === undefined) {
+                    isExtractingRef.current = false;
+                    return;
+                }
+
+                if (thumbnailCache.current.has(targetTime)) {
+                    isExtractingRef.current = false;
+                    if (active && extractionQueueRef.current.length > 0) requestAnimationFrame(processQueue);
+                    return;
+                }
+
+                const video = extractVideoRef.current;
+                if (!video) {
+                    isExtractingRef.current = false;
+                    return;
+                }
+                
+                await new Promise<void>((resolve) => {
+                    const onSeeked = () => { cleanup(); resolve(); };
+                    const onError = () => { cleanup(); resolve(); }; // Resolve anyway to unblock
+                    const cleanup = () => {
+                        video.removeEventListener('seeked', onSeeked);
+                        video.removeEventListener('error', onError);
+                    };
+                    video.addEventListener('seeked', onSeeked);
+                    video.addEventListener('error', onError);
+                    video.currentTime = targetTime;
+                });
+
+                if (!active) return;
+
+                const bmp = await createImageBitmap(video, { resizeWidth: THUMB_WIDTH, resizeHeight: TRACK_HEIGHT });
+                thumbnailCache.current.set(targetTime, bmp);
+            } catch (err) {
+                console.error("Failed to extract thumbnail", err);
+            }
+
+            isExtractingRef.current = false;
+            
+            if (active && extractionQueueRef.current.length > 0) {
+                requestAnimationFrame(processQueue);
+            }
+        };
+
+        const intervalId = setInterval(() => {
+            if (extractionQueueRef.current.length > 0 && !isExtractingRef.current) {
+                processQueue();
+            }
+        }, 100);
+
+        return () => {
+            active = false;
+            clearInterval(intervalId);
+        };
+    }, [proxyUrl, THUMB_WIDTH]);
+
     // --- Animation loop (no scroll state dependency) ---
     useEffect(() => {
         const animate = () => {
@@ -300,31 +410,43 @@ export const Timeline: React.FC = () => {
         const sl = containerRef.current?.scrollLeft || 0;
         const time = (x + sl) / pixelsPerSecond;
 
-        // 1. Check if we clicked on a Cut Point
-        const existingCutPoints = segments.slice(1).map(s => s.startTime);
-        const PIXEL_THRESHOLD = 8;
-        const timeThreshold = PIXEL_THRESHOLD / pixelsPerSecond;
-        const clickedIdx = existingCutPoints.findIndex(cp => Math.abs(cp - time) <= timeThreshold);
+        // Calculate Y position to separate Ruler vs Track clicks
+        const y = e.clientY - rect.top;
+        const isRulerClick = y <= RULER_HEIGHT;
 
-        if (clickedIdx !== -1) {
-            draggingCutPointIndexRef.current = clickedIdx;
-            setSelectedCutPointIndex(clickedIdx);
-            setSelectedSegmentId(null);
-        } else {
-            // 2. Scrub playhead
+        // 1. If clicking the Ruler (top area), ONLY scrub playhead
+        if (isRulerClick) {
             isDraggingRef.current = true;
             setIsDraggingStyle(true);
             setSelectedCutPointIndex(null);
 
             if (time >= 0 && time <= duration) {
-                const snappedTime = calculateSnap(time, existingCutPoints, pixelsPerSecond);
-                seekTo(Math.max(0, Math.min(duration, snappedTime)));
+                // Not snapping when clicking the ruler is usually better for fine control
+                seekTo(time);
+            }
+        } 
+        // 2. If clicking the Track (bottom area), ONLY interact with Cuts/Segments
+        else {
+            const existingCutPoints = segments.slice(1).map(s => s.startTime);
+            const PIXEL_THRESHOLD = 8;
+            const timeThreshold = PIXEL_THRESHOLD / pixelsPerSecond;
+            const clickedIdx = existingCutPoints.findIndex(cp => Math.abs(cp - time) <= timeThreshold);
 
+            if (clickedIdx !== -1) {
+                // Dragging a Cut Point
+                draggingCutPointIndexRef.current = clickedIdx;
+                setSelectedCutPointIndex(clickedIdx);
+                setSelectedSegmentId(null);
+            } else {
+                // Selecting a Segment
+                setSelectedCutPointIndex(null);
                 const clickedSeg = segments.find(
                     s => time >= s.startTime && time < s.endTime
                 );
                 if (clickedSeg) {
                     setSelectedSegmentId(clickedSeg.id);
+                } else {
+                    setSelectedSegmentId(null);
                 }
             }
         }
@@ -428,66 +550,33 @@ export const Timeline: React.FC = () => {
     }, [selectedCutPointIndex, removeCutPoint]);
 
     // --- Zoom ---
-    const performZoom = useCallback((newPps: number, anchorMouseX?: number) => {
+    const pendingScrollLeftRef = useRef<number | null>(null);
+
+    // Apply pending scroll after React re-renders the wider canvas
+    useEffect(() => {
+        if (pendingScrollLeftRef.current !== null && containerRef.current) {
+            containerRef.current.scrollLeft = pendingScrollLeftRef.current;
+            pendingScrollLeftRef.current = null;
+        }
+    });
+
+    // --- Zoom ---
+    const performZoom = useCallback((newPps: number) => {
         if (!containerRef.current) return;
         const clamped = Math.max(MIN_PPS, Math.min(MAX_PPS, newPps));
         const containerWidth = containerRef.current.clientWidth;
-        const sl = containerRef.current.scrollLeft;
 
-        let anchorTime: number;
-        let viewOffset: number;
-
-        if (anchorMouseX !== undefined) {
-            anchorTime = (sl + anchorMouseX) / pixelsPerSecond;
-            viewOffset = anchorMouseX;
-        } else {
-            // User requested: Always anchor zoom to the playhead (currentTime),
-            // so the timeline expands/contracts around the current playback position.
-            anchorTime = currentTime;
-            viewOffset = (currentTime * pixelsPerSecond) - sl;
-
-            // If zooming while playhead is way offscreen, gently pull it back
-            // so we don't zoom into an empty void where the playhead can't be seen.
-            if (viewOffset < 0 || viewOffset > containerWidth) {
-                viewOffset = containerWidth / 2;
-            }
-        }
-
-        let newScrollLeft = Math.max(0, anchorTime * clamped - viewOffset);
-
-        // HARD CONSTRAINT: Playhead must never be lost from view during zoom
-        const playheadX = currentTime * clamped;
-        const padding = 50; // Keep playhead at least 50px away from the edges
-
-        if (playheadX < newScrollLeft + padding) {
-            // Playhead is too far left (or offscreen left), adjust scrollLeft to bring it in
-            newScrollLeft = Math.max(0, playheadX - padding);
-        } else if (playheadX > newScrollLeft + containerWidth - padding) {
-            // Playhead is too far right (or offscreen right), adjust scrollLeft
-            newScrollLeft = Math.max(0, playheadX - containerWidth + padding);
-        }
+        // User requested: Always center the zoom strictly on the playhead.
+        // We simply map the playhead's new coordinate to the center of the viewport width.
+        const newPlayheadX = currentTime * clamped;
+        const targetScrollLeft = Math.max(0, newPlayheadX - (containerWidth / 2));
 
         setPixelsPerSecond(clamped);
-
-        // VITAL FIX: React state updates are async. If we just assign scrollLeft now, 
-        // the browser will REJECT it if newScrollLeft > current DOM scrollWidth.
-        // We must synchronously force the wrapper to be wide enough BEFORE setting scrollLeft,
-        // so the browser accepts the scroll assignment. React will reconcile the style on the next render.
-        const newTotalWidth = duration * clamped;
-        const wrapper = containerRef.current.firstElementChild as HTMLElement;
-        if (wrapper) {
-            wrapper.style.width = `${Math.max(newTotalWidth, containerWidth)}px`;
-        }
-
-        console.log(`[Zoom] Pps: ${pixelsPerSecond.toFixed(2)} -> ${clamped.toFixed(2)} | Playhead Time: ${currentTime.toFixed(2)} | Target Scroll: ${newScrollLeft.toFixed(2)}`);
-
-        containerRef.current.scrollLeft = newScrollLeft;
         
-        // Log actual scroll position applied to see if browser rejected it
-        setTimeout(() => {
-            console.log(`[Zoom] Actual applied ScrollLeft: ${containerRef.current?.scrollLeft}`);
-        }, 10);
-    }, [pixelsPerSecond, currentTime, setPixelsPerSecond, duration]);
+        // Stash the scroll target. The useEffect will apply it the moment React 
+        // officially commits the new, wider canvas width to the DOM.
+        pendingScrollLeftRef.current = targetScrollLeft;
+    }, [currentTime, setPixelsPerSecond]);
 
     // Fit entire timeline in view
     const zoomFitAll = useCallback(() => {
@@ -497,18 +586,18 @@ export const Timeline: React.FC = () => {
         containerRef.current.scrollLeft = 0;
     }, [duration, setPixelsPerSecond]);
 
-    // Handle wheel for zoom — Ctrl/Cmd + scroll
+    // Handle wheel for zoom — Ctrl/Cmd + scroll, otherwise horizontal scroll
     const handleWheel = useCallback((e: React.WheelEvent) => {
         if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
             const delta = e.deltaY > 0 ? -1 : 1;
             // 25% per wheel tick (industry standard feels)
             const newPps = pixelsPerSecond * (1 + delta * 0.25);
-
+            performZoom(newPps);
+        } else {
+            // Regular wheel scrolls horizontally
             if (containerRef.current) {
-                const rect = containerRef.current.getBoundingClientRect();
-                const mouseX = e.clientX - rect.left;
-                performZoom(newPps, mouseX);
+                containerRef.current.scrollLeft += e.deltaY;
             }
         }
     }, [pixelsPerSecond, performZoom]);
@@ -563,10 +652,21 @@ export const Timeline: React.FC = () => {
                         onPointerMove={handlePointerMove}
                     />
 
-                    {/* Hidden Video for Extracting Thumbnails via GPU */}
+                    {/* Hidden Video for Extracting Thumbnails via GPU (Hover tooltips) */}
                     {proxyUrl && (
                         <video
                             ref={thumbVideoRef}
+                            src={proxyUrl}
+                            muted
+                            playsInline
+                            style={{ display: 'none' }}
+                        />
+                    )}
+
+                    {/* Dedicated Background Video for Canvas Thumbnails */}
+                    {proxyUrl && (
+                        <video
+                            ref={extractVideoRef}
                             src={proxyUrl}
                             muted
                             playsInline
