@@ -1,7 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { useVideoStore } from '../stores/videoStore';
 import { useProjectStore } from '../stores/projectStore';
-import { useTimelineStore } from '../stores/timelineStore';
 
 type ShortcutHandler = (e: KeyboardEvent) => void;
 
@@ -17,8 +16,6 @@ export function useKeyboardShortcuts() {
     const addCutPoint = useProjectStore(s => s.addCutPoint);
     const saveProject = useProjectStore(s => s.saveProject);
     const undoSegments = useProjectStore(s => s.undoSegments);
-    const zoomIn = useTimelineStore(s => s.zoomIn);
-    const zoomOut = useTimelineStore(s => s.zoomOut);
 
     const handleKeyDown: ShortcutHandler = useCallback((e: KeyboardEvent) => {
         // Don't trigger shortcuts when typing in inputs
@@ -74,19 +71,6 @@ export function useKeyboardShortcuts() {
                     saveProject();
                 }
                 break;
-            case '=':
-            case '+':
-                if (isCmd) {
-                    e.preventDefault();
-                    zoomIn();
-                }
-                break;
-            case '-':
-                if (isCmd) {
-                    e.preventDefault();
-                    zoomOut();
-                }
-                break;
             case 'z':
             case 'Z':
                 if (isCmd) {
@@ -95,7 +79,7 @@ export function useKeyboardShortcuts() {
                 }
                 break;
         }
-    }, [togglePlay, stepFrame, skipSeconds, currentTime, duration, addCutPoint, saveProject, undoSegments, zoomIn, zoomOut]);
+    }, [togglePlay, stepFrame, skipSeconds, currentTime, duration, addCutPoint, saveProject, undoSegments]);
 
     useEffect(() => {
         window.addEventListener('keydown', handleKeyDown);

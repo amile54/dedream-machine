@@ -530,22 +530,6 @@ export const Timeline: React.FC = () => {
         setHoverCutPointIndex(null);
     }, []);
 
-    // Handle Keyboard Deletions for Cut Points
-    useEffect(() => {
-        const onKeyDown = (e: KeyboardEvent) => {
-            if ((e.key === 'Backspace' || e.key === 'Delete') && selectedCutPointIndex !== null) {
-                const target = e.target as HTMLElement;
-                if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
-
-                removeCutPoint(selectedCutPointIndex);
-                setSelectedCutPointIndex(null);
-            }
-        };
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-    }, [selectedCutPointIndex, removeCutPoint]);
-
-    // --- Zoom: always center playhead ---
     const performZoom = useCallback((newPps: number) => {
         if (!containerRef.current) return;
         const clamped = Math.max(MIN_PPS, Math.min(MAX_PPS, newPps));
@@ -574,6 +558,31 @@ export const Timeline: React.FC = () => {
         // 6. Tell React to catch up asynchronously
         setPixelsPerSecond(clamped);
     }, [setPixelsPerSecond]);
+
+    // Handle Keyboard Shortcuts for Timeline (Cut points, Zoom)
+    useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            if ((e.key === 'Backspace' || e.key === 'Delete') && selectedCutPointIndex !== null) {
+                const target = e.target as HTMLElement;
+                if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+
+                removeCutPoint(selectedCutPointIndex);
+                setSelectedCutPointIndex(null);
+            }
+
+            // Timeline Zoom Shortcuts (Cmd/Ctrl + =/+)
+            const isCmd = e.metaKey || e.ctrlKey;
+            if (isCmd && (e.key === '=' || e.key === '+')) {
+                e.preventDefault();
+                performZoom(pixelsPerSecondRef.current * 1.25);
+            } else if (isCmd && e.key === '-') {
+                e.preventDefault();
+                performZoom(pixelsPerSecondRef.current * 0.8);
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [selectedCutPointIndex, removeCutPoint, performZoom]);
 
     // Fit entire timeline in view
     const zoomFitAll = useCallback(() => {
