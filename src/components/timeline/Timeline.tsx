@@ -1,5 +1,4 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
-import { flushSync } from 'react-dom';
 import { useVideoStore } from '../../stores/videoStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useTimelineStore } from '../../stores/timelineStore';
@@ -560,15 +559,20 @@ export const Timeline: React.FC = () => {
         // 2. We want the playhead to be at the exact same physicalOffset after zoom
         const target = Math.max(0, (ct * clamped) - physicalOffset);
 
-        // flushSync forces React to render synchronously.
-        // After it returns, the wrapper div's width is already updated in the DOM.
-        flushSync(() => {
-            setPixelsPerSecond(clamped);
-        });
+        // 3. CRITICAL: Mac/Chrome will silently REJECT any scrollLeft value that exceeds 
+        // the current layout's scrollWidth. We MUST force the DOM element to instantly be
+        // wide enough to accept the new scroll value before React's slow render cycle.
+        const wrapper = containerRef.current.firstElementChild as HTMLElement;
+        if (wrapper) {
+            wrapper.style.width = `${Math.max(duration * clamped, containerRef.current.clientWidth)}px`;
+        }
 
-        // Now the DOM is guaranteed to have the correct width. Safe to set scroll.
+        // 4. Now the DOM is physically wide enough. Safe to set scroll.
         containerRef.current.scrollLeft = target;
-    }, [setPixelsPerSecond]);
+
+        // 5. Tell React to catch up asynchronously
+        setPixelsPerSecond(clamped);
+    }, [setPixelsPerSecond, duration]);
 
     // Fit entire timeline in view
     const zoomFitAll = useCallback(() => {
