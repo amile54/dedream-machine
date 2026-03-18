@@ -530,28 +530,39 @@ export const Timeline: React.FC = () => {
         setHoverCutPointIndex(null);
     }, []);
 
+    // --- Zoom: Playhead Anchoring (Industry Standard) ---
     const performZoom = useCallback((newPps: number) => {
         if (!containerRef.current) return;
         const clamped = Math.max(MIN_PPS, Math.min(MAX_PPS, newPps));
-        const ct = currentTimeRef.current; // Use the ref for absolute latest
+        const ct = currentTimeRef.current;
         
-        // 1. We want the playhead to ALWAYS be in the exact center of the screen when zooming
-        const halfView = containerRef.current.clientWidth / 2;
-        const target = Math.max(0, (ct * clamped) - halfView);
+        // 1. Where is the playhead exactly right now, in pixels from the left edge of the screen?
+        const currentPps = pixelsPerSecondRef.current;
+        const currentSl = containerRef.current.scrollLeft;
+        const playheadPhysicalX = (ct * currentPps) - currentSl;
 
-        // 2. Force DOM physical resize instantaneously to prevent layout scroll-capping
+        // 2. Calculate the target scroll that keeps the playhead at the EXACT SAME physical screen pixel
+        const newPlayheadAbsoluteX = ct * clamped;
+        const target = Math.max(0, newPlayheadAbsoluteX - playheadPhysicalX);
+
+        // 3. Immediately widen the real DOM so the browser can technically accept the new scroll value
         const wrapper = containerRef.current.firstElementChild as HTMLElement;
         if (wrapper) {
             wrapper.style.width = `${Math.max(durationRef.current * clamped, containerRef.current.clientWidth)}px`;
         }
 
-        // 4. Set the native scroll instantaneously 
+        // 4. THE MAGIC BULLET: Force the browser to flush its layout engine synchronously!
+        // Without this line, the browser caches the old scrollWidth, thinks our new `target` 
+        // exceeds the boundaries, and severely clips the scroll, throwing the timeline back in time.
+        void containerRef.current.scrollWidth;
+
+        // 5. Safely apply the scroll to the now-flushed DOM tree
         containerRef.current.scrollLeft = target;
 
-        // 5. CRITICAL: Update the ref synchronously so the very next trackpad event (which might fire in 2ms) uses the right baseline!
+        // 6. Update references immediately for trackpad rapid-fire protection
         pixelsPerSecondRef.current = clamped;
         
-        // 6. Tell React to catch up asynchronously
+        // 7. Tell React to update UI asynchronously
         setPixelsPerSecond(clamped);
     }, [setPixelsPerSecond]);
 
