@@ -535,15 +535,11 @@ export const Timeline: React.FC = () => {
         const clamped = Math.max(MIN_PPS, Math.min(MAX_PPS, newPps));
         const ct = currentTimeRef.current; // Use the ref for absolute latest
         
-        // 1. Find playhead's physical pixel offset using the EXACT synchronous zoom ratio that matches the current scrollLeft
-        const currentPps = pixelsPerSecondRef.current;
-        const currentSl = containerRef.current.scrollLeft;
-        const physicalOffset = (ct * currentPps) - currentSl;
+        // 1. We want the playhead to ALWAYS be in the exact center of the screen when zooming
+        const halfView = containerRef.current.clientWidth / 2;
+        const target = Math.max(0, (ct * clamped) - halfView);
 
-        // 2. We want the playhead to be at the exact same physicalOffset after zoom
-        const target = Math.max(0, (ct * clamped) - physicalOffset);
-
-        // 3. Force DOM physical resize instantaneously to prevent layout scroll-capping
+        // 2. Force DOM physical resize instantaneously to prevent layout scroll-capping
         const wrapper = containerRef.current.firstElementChild as HTMLElement;
         if (wrapper) {
             wrapper.style.width = `${Math.max(durationRef.current * clamped, containerRef.current.clientWidth)}px`;
