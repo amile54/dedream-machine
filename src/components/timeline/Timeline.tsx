@@ -1,4 +1,5 @@
-import React, { useRef, useEffect, useLayoutEffect, useCallback, useState } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useVideoStore } from '../../stores/videoStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useTimelineStore } from '../../stores/timelineStore';
@@ -546,16 +547,6 @@ export const Timeline: React.FC = () => {
     }, [selectedCutPointIndex, removeCutPoint]);
 
     // --- Zoom: always center playhead ---
-    const pendingScrollRef = useRef<number | null>(null);
-
-    // Primary: apply scroll right after React commits the new DOM
-    useLayoutEffect(() => {
-        if (pendingScrollRef.current !== null && containerRef.current) {
-            containerRef.current.scrollLeft = pendingScrollRef.current;
-            pendingScrollRef.current = null;
-        }
-    });
-
     const performZoom = useCallback((newPps: number) => {
         if (!containerRef.current) return;
         const clamped = Math.max(MIN_PPS, Math.min(MAX_PPS, newPps));
@@ -563,15 +554,14 @@ export const Timeline: React.FC = () => {
         const halfView = containerRef.current.clientWidth / 2;
         const target = Math.max(0, ct * clamped - halfView);
 
-        pendingScrollRef.current = target;
-        setPixelsPerSecond(clamped);
-
-        // Backup: in case React does another unexpected render that resets scroll
-        requestAnimationFrame(() => {
-            if (containerRef.current && Math.abs(containerRef.current.scrollLeft - target) > 5) {
-                containerRef.current.scrollLeft = target;
-            }
+        // flushSync forces React to render synchronously.
+        // After it returns, the wrapper div's width is already updated in the DOM.
+        flushSync(() => {
+            setPixelsPerSecond(clamped);
         });
+
+        // Now the DOM is guaranteed to have the correct width. Safe to set scroll.
+        containerRef.current.scrollLeft = target;
     }, [setPixelsPerSecond]);
 
     // Fit entire timeline in view
