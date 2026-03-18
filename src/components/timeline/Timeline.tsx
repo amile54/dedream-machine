@@ -561,11 +561,15 @@ export const Timeline: React.FC = () => {
     const performZoom = useCallback((newPps: number) => {
         if (!containerRef.current) return;
         const clamped = Math.max(MIN_PPS, Math.min(MAX_PPS, newPps));
-        const ct = currentTimeRef.current;
-        const halfView = containerRef.current.clientWidth / 2;
 
-        // Just center the playhead. Simple.
-        pendingScrollRef.current = Math.max(0, ct * clamped - halfView);
+        // Read currentTime fresh from the store — the ref can be stale
+        const ct = useVideoStore.getState().currentTime;
+        const halfView = containerRef.current.clientWidth / 2;
+        const target = Math.max(0, ct * clamped - halfView);
+
+        console.log(`[Zoom] ct=${ct.toFixed(1)}s pps=${clamped.toFixed(2)} target=${target.toFixed(0)} halfView=${halfView.toFixed(0)}`);
+
+        pendingScrollRef.current = target;
         setPixelsPerSecond(clamped);
     }, [setPixelsPerSecond]);
 
