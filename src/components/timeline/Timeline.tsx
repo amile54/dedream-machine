@@ -118,7 +118,18 @@ export const Timeline: React.FC = () => {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
+        const clientWidth = containerRef.current.clientWidth;
+        const sl = containerRef.current.scrollLeft;
+
+        // VIRTUALIZED CANVAS DOM:
+        // The canvas DOM element must slide to match the scroll viewport,
+        // and its width must be frozen to the viewport width, to prevent
+        // allocating a 50,000px canvas that crashes Chrome or causes double-shifting.
+        canvas.style.width = `${clientWidth}px`;
+        canvas.style.transform = `translateX(${sl}px)`;
+        
         const dpr = window.devicePixelRatio || 1;
+        // Re-read rect after enforcing style width
         const rect = canvas.getBoundingClientRect();
         canvas.width = rect.width * dpr;
         canvas.height = rect.height * dpr;
@@ -126,7 +137,6 @@ export const Timeline: React.FC = () => {
 
         const width = rect.width;
         const height = rect.height;
-        const sl = containerRef.current.scrollLeft;
 
         // Reset the thumbnail extraction queue to exactly what is VISIBLE right now.
         // This instantly abandons thousands of stale extraction requests if the user zooms or scrolls fast!
@@ -551,9 +561,6 @@ export const Timeline: React.FC = () => {
         setHoverCutPointIndex(null);
     }, []);
 
-    // --- Temporary Debug State ---
-    const [debugInfo, setDebugInfo] = useState<string>('');
-
     // --- Zoom: Smart Anchoring (JianYing/FCP Standard) ---
     const performZoom = useCallback((newPps: number) => {
         if (!containerRef.current) return;
@@ -589,36 +596,8 @@ export const Timeline: React.FC = () => {
         }
 
         container.scrollLeft = safeTarget;
-        
-        // DEBUG: Check if browser accepted our scrollLeft
-        const actualSl = container.scrollLeft;
-
         pixelsPerSecondRef.current = clamped;
         useTimelineStore.getState().setPixelsPerSecond(clamped);
-
-        // DEBUG: Show all values on screen
-        const debugLines = [
-            `currentTime: ${ct.toFixed(1)}s`,
-            `oldPps: ${currentPps.toFixed(3)} → newPps: ${clamped.toFixed(3)}`,
-            `playheadPhysicalX: ${playheadPhysicalX.toFixed(1)}px (visible: ${playheadPhysicalX > 0 && playheadPhysicalX < clientWidth})`,
-            `anchorTime: ${anchorTime.toFixed(1)}s, anchorPhysicalX: ${anchorPhysicalX.toFixed(1)}px`,
-            `scrollLeft: wanted=${safeTarget.toFixed(0)} actual=${actualSl.toFixed(0)} ${Math.abs(actualSl - safeTarget) > 1 ? '⚠️CLIPPED!' : '✅OK'}`,
-            `clientWidth: ${clientWidth}px`,
-            `wrapperWidth: ${wrapper?.style.width}`,
-        ];
-        setDebugInfo(debugLines.join('\n'));
-
-        // Also check 50ms later if React overwrote the scroll
-        setTimeout(() => {
-            if (containerRef.current) {
-                const laterSl = containerRef.current.scrollLeft;
-                if (Math.abs(laterSl - safeTarget) > 1) {
-                    setDebugInfo(prev => prev + `\n⚠️ 50ms later: scrollLeft drifted to ${laterSl.toFixed(0)} (wanted ${safeTarget.toFixed(0)})`);
-                } else {
-                    setDebugInfo(prev => prev + `\n✅ 50ms later: scrollLeft stable at ${laterSl.toFixed(0)}`);
-                }
-            }
-        }, 50);
     }, []);
 
     // Handle Keyboard Shortcuts for Timeline (Cut points, Zoom)
@@ -701,21 +680,6 @@ export const Timeline: React.FC = () => {
                     </button>
                 </div>
             </div>
-            {/* DEBUG OVERLAY — temporary */}
-            {debugInfo && (
-                <pre style={{
-                    background: 'rgba(255,0,0,0.15)',
-                    color: '#ff8',
-                    fontSize: '10px',
-                    padding: '4px 8px',
-                    margin: 0,
-                    fontFamily: 'monospace',
-                    whiteSpace: 'pre-wrap',
-                    maxHeight: '100px',
-                    overflow: 'auto',
-                    borderBottom: '1px solid rgba(255,0,0,0.3)',
-                }}>{debugInfo}</pre>
-            )}
             <div
                 ref={containerRef}
                 className="timeline-scroll-container"
