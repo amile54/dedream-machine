@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useVideoStore } from '../../stores/videoStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { useTimelineStore } from '../../stores/timelineStore';
 import { formatTime } from '../../utils/timeFormat';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
@@ -105,11 +106,25 @@ export const VideoPlayer: React.FC = () => {
         }
     }, [project?.videoFilePath]);
 
-    const handleTimeUpdate = useCallback(() => {
-        if (videoRef.current) {
-            setCurrentTime(videoRef.current.currentTime);
+    const handleTimeUpdate = () => {
+        if (!videoRef.current) return;
+        const current = videoRef.current.currentTime;
+        setCurrentTime(current);
+
+        // Feature: Loop playback if a segment is selected
+        const selectedSegmentId = useTimelineStore.getState().selectedSegmentId;
+        if (selectedSegmentId) {
+            const project = useProjectStore.getState().project;
+            if (project) {
+                const activeSegment = project.segments.find(s => s.id === selectedSegmentId);
+                if (activeSegment && current >= activeSegment.endTime) {
+                    // Instantly loop back to the start of the segment
+                    videoRef.current.currentTime = activeSegment.startTime;
+                    setCurrentTime(activeSegment.startTime);
+                }
+            }
         }
-    }, [setCurrentTime]);
+    };
 
     const handleLoadedMetadata = useCallback(() => {
         if (videoRef.current) {

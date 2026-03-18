@@ -28,7 +28,6 @@ export const Timeline: React.FC = () => {
     const containerRef = useRef<HTMLDivElement>(null);
     const thumbVideoRef = useRef<HTMLVideoElement>(null); // For hover tooltip
     const extractVideoRef = useRef<HTMLVideoElement>(null); // Dedicated for background extraction
-    const animFrameRef = useRef<number>(0);
 
     // Thumbnail Cache system
     const thumbnailCache = useRef<Map<number, ImageBitmap>>(new Map());
@@ -97,12 +96,12 @@ export const Timeline: React.FC = () => {
         'rgba(200, 180, 80, 0.5)',
         'rgba(80, 140, 200, 0.5)',
     ];
+    const drawRef = useRef<(() => void) | null>(null);
 
-    // --- Draw ---
+    // --- Draw the timeline on Canvas ---
     const draw = useCallback(() => {
+        if (!canvasRef.current || !containerRef.current || duration <= 0) return;
         const canvas = canvasRef.current;
-        if (!canvas) return;
-
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
@@ -114,13 +113,15 @@ export const Timeline: React.FC = () => {
 
         const width = rect.width;
         const height = rect.height;
-        const sl = containerRef.current?.scrollLeft || 0;
+        const sl = containerRef.current.scrollLeft;
+
+        // Reset the thumbnail extraction queue to exactly what is VISIBLE right now.
+        // This instantly abandons thousands of stale extraction requests if the user zooms or scrolls fast!
+        const newVisibleThumbs: number[] = [];
 
         // Clear
         ctx.fillStyle = '#12121e';
         ctx.fillRect(0, 0, width, height);
-
-        if (duration <= 0) return;
 
         // --- Draw ruler ---
         ctx.fillStyle = '#1a1a2e';
@@ -215,10 +216,8 @@ export const Timeline: React.FC = () => {
                         TRACK_HEIGHT
                     );
                 } else {
-                    // Queue for extraction if not already in queue
-                    if (!extractionQueueRef.current.includes(thumbTime)) {
-                        extractionQueueRef.current.push(thumbTime);
-                    }
+                    // Queue for extraction
+                    newVisibleThumbs.push(thumbTime);
                 }
             }
 
@@ -298,7 +297,27 @@ export const Timeline: React.FC = () => {
             ctx.closePath();
             ctx.fill();
         }
+
+        // Update internal refs for hover/drag
+        segmentsRef.current = segments;
+        durationRef.current = duration;
+        currentTimeRef.current = currentTime;
+        pixelsPerSecondRef.current = pixelsPerSecond;
+        
+        // Priority queuing: Latest visible goes first (LIFO array behavior)
+        extractionQueueRef.current = newVisibleThumbs.reverse();
+
     }, [duration, currentTime, pixelsPerSecond, segments, selectedSegmentId, hoverCutPointIndex, selectedCutPointIndex]);
+
+    // Keep a stable ref to the draw function for the async extractor
+    useEffect(() => {
+        drawRef.current = draw;
+    }, [draw]);
+
+    // Draw whenever state changes
+    useEffect(() => {
+        draw();
+    }, [draw]);
 
     // --- Async Background Thumbnail Extractor ---
     useEffect(() => {
@@ -342,10 +361,15 @@ export const Timeline: React.FC = () => {
                     video.currentTime = targetTime;
                 });
 
-                if (!active) return;
-
-                const bmp = await createImageBitmap(video, { resizeWidth: THUMB_WIDTH, resizeHeight: TRACK_HEIGHT });
+                if (!active) return;                const bmp = await createImageBitmap(video, { resizeWidth: THUMB_WIDTH, resizeHeight: TRACK_HEIGHT });
                 thumbnailCache.current.set(targetTime, bmp);
+                
+                // Triggers an event-driven redraw to place the new thumbnail immediately without 60fps polling
+                if (drawRef.current) drawRef.current();
+
+                // Throttle the loop slightly (10ms) to ensure React/UI thread isn't starved by IO
+                await new Promise(r => setTimeout(r, 10));
+
             } catch (err) {
                 console.error("Failed to extract thumbnail", err);
             }
@@ -353,7 +377,8 @@ export const Timeline: React.FC = () => {
             isExtractingRef.current = false;
             
             if (active && extractionQueueRef.current.length > 0) {
-                requestAnimationFrame(processQueue);
+                // Ensure loop continues without freezing the thread
+                setTimeout(processQueue, 0);
             }
         };
 
@@ -361,42 +386,13 @@ export const Timeline: React.FC = () => {
             if (extractionQueueRef.current.length > 0 && !isExtractingRef.current) {
                 processQueue();
             }
-        }, 100);
+        }, 80);
 
         return () => {
             active = false;
             clearInterval(intervalId);
         };
     }, [proxyUrl, THUMB_WIDTH]);
-
-    // --- Animation loop (no scroll state dependency) ---
-    useEffect(() => {
-        const animate = () => {
-            draw();
-
-            /*
-            // Smooth Auto-Pan is currently fighting with the Zoom logic.
-            // When zooming out, the playhead might temporarily evaluate as "offscreen" 
-            // relative to the old scroll position, causing this 60fps loop to instantly 
-            // overwrite the zoom's carefully calculated scrollLeft.
-            if (useVideoStore.getState().isPlaying && !isDraggingRef.current && containerRef.current) {
-                const sl = containerRef.current.scrollLeft;
-                const headX = useVideoStore.getState().currentTime * pixelsPerSecondRef.current - sl;
-                const viewWidth = containerRef.current.clientWidth;
-
-                if (headX > viewWidth * 0.85 && headX <= viewWidth * 1.1) {
-                    containerRef.current.scrollLeft += 2;
-                } else if (headX > viewWidth * 1.1 && headX < viewWidth * 1.5) {
-                    containerRef.current.scrollLeft = (useVideoStore.getState().currentTime * pixelsPerSecondRef.current) - (viewWidth / 2);
-                }
-            }
-            */
-
-            animFrameRef.current = requestAnimationFrame(animate);
-        };
-        animFrameRef.current = requestAnimationFrame(animate);
-        return () => cancelAnimationFrame(animFrameRef.current);
-    }, [draw]);
 
     // --- Pointer event handlers using document-level listeners ---
     // NO setPointerCapture — the scrollbar remains fully independent
@@ -550,33 +546,38 @@ export const Timeline: React.FC = () => {
     }, [selectedCutPointIndex, removeCutPoint]);
 
     // --- Zoom ---
-    const pendingScrollLeftRef = useRef<number | null>(null);
-
-    // Apply pending scroll after React re-renders the wider canvas
-    useEffect(() => {
-        if (pendingScrollLeftRef.current !== null && containerRef.current) {
-            containerRef.current.scrollLeft = pendingScrollLeftRef.current;
-            pendingScrollLeftRef.current = null;
-        }
-    });
-
-    // --- Zoom ---
     const performZoom = useCallback((newPps: number) => {
         if (!containerRef.current) return;
         const clamped = Math.max(MIN_PPS, Math.min(MAX_PPS, newPps));
-        const containerWidth = containerRef.current.clientWidth;
 
-        // User requested: Always center the zoom strictly on the playhead.
-        // We simply map the playhead's new coordinate to the center of the viewport width.
-        const newPlayheadX = currentTime * clamped;
-        const targetScrollLeft = Math.max(0, newPlayheadX - (containerWidth / 2));
-
-        setPixelsPerSecond(clamped);
+        // CRITICAL FIX: To prevent zooming from "losing" the playhead or "jumping back", 
+        // the math must be solved synchronously with the DOM assignment.
+        // We find playhead physical offset on screen, scale up the canvas, and then IMMEDIATELY 
+        // put the scroll bar such that the playhead remains precisely at the exact same physical offset!
         
-        // Stash the scroll target. The useEffect will apply it the moment React 
-        // officially commits the new, wider canvas width to the DOM.
-        pendingScrollLeftRef.current = targetScrollLeft;
-    }, [currentTime, setPixelsPerSecond]);
+        // 1. Where is the playhead right now relative to the view frame?
+        const currentSl = containerRef.current.scrollLeft;
+        const playheadPhysicalX = (currentTime * pixelsPerSecond) - currentSl; 
+
+        // 2. Set generic React state
+        setPixelsPerSecond(clamped);
+
+        // 3. To apply the scroll reliably on Mac Safari/Chromium, we must synchronously resize the canvas
+        // before setting scrollLeft. Otherwise the browser rejects the scroll value if it's too large.
+        const newTotalWidth = duration * clamped;
+        const wrapper = containerRef.current.firstElementChild as HTMLElement;
+        if (wrapper) {
+            wrapper.style.width = `${Math.max(newTotalWidth, containerRef.current.clientWidth || 0)}px`;
+        }
+
+        // 4. Force perfect physical tracking!
+        const newPlayheadAbsoluteX = currentTime * clamped;
+        containerRef.current.scrollLeft = Math.max(0, newPlayheadAbsoluteX - playheadPhysicalX);
+        
+        // Ensure immediate redraw since we killed the 60fps loop
+        draw(); 
+
+    }, [currentTime, setPixelsPerSecond, duration, pixelsPerSecond, draw]);
 
     // Fit entire timeline in view
     const zoomFitAll = useCallback(() => {
@@ -638,6 +639,7 @@ export const Timeline: React.FC = () => {
                 ref={containerRef}
                 className="timeline-scroll-container"
                 onWheel={handleWheel}
+                onScroll={draw}
             >
                 <div
                     className={`timeline-canvas-wrapper ${isDraggingStyle ? 'is-dragging' : ''}`}
