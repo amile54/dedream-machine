@@ -551,8 +551,14 @@ export const Timeline: React.FC = () => {
         if (!containerRef.current) return;
         const clamped = Math.max(MIN_PPS, Math.min(MAX_PPS, newPps));
         const ct = useVideoStore.getState().currentTime;
-        const halfView = containerRef.current.clientWidth / 2;
-        const target = Math.max(0, ct * clamped - halfView);
+        
+        // 1. Find playhead's physical pixel offset from the left of the viewport
+        const currentPps = pixelsPerSecondRef.current;
+        const currentSl = containerRef.current.scrollLeft;
+        const physicalOffset = (ct * currentPps) - currentSl;
+
+        // 2. We want the playhead to be at the exact same physicalOffset after zoom
+        const target = Math.max(0, (ct * clamped) - physicalOffset);
 
         // flushSync forces React to render synchronously.
         // After it returns, the wrapper div's width is already updated in the DOM.
