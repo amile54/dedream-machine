@@ -332,14 +332,15 @@ export async function exportClip(
 export async function detectSceneChange(videoPath: string, timestamp: number): Promise<boolean> {
     const start = Math.max(0, timestamp - 0.2);
     
-    // Use select filter to drop frames without a significant scene change (> 20%),
-    // then pass the remaining frames to showinfo which logs them.
+    // Use select filter to drop frames without a significant scene change (> 20%).
+    // We MUST include gt(n,0) because FFmpeg always scores the first frame as a scene change (score 1.0)
+    // since it transitions from nothing to a picture.
     const cmd = Command.sidecar('bin/ffmpeg', [
         '-v', 'info',
         '-ss', start.toString(),
         '-t', '0.4',
         '-i', videoPath,
-        '-filter:v', "select='gt(scene,0.2)',showinfo",
+        '-filter:v', "select='gt(scene,0.2)*gt(n,0)',showinfo",
         '-f', 'null',
         '-'
     ]);
