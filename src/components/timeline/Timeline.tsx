@@ -102,7 +102,18 @@ export const Timeline: React.FC = () => {
 
     // --- Draw the timeline on Canvas ---
     const draw = useCallback(() => {
-        if (!canvasRef.current || !containerRef.current || duration <= 0) return;
+        if (!canvasRef.current || !containerRef.current || durationRef.current <= 0) return;
+        
+        // --- CRITICAL FIX: PULL STRICTLY FRESH STATE ---
+        // During rapid zoom, DOM scrollLeft updates instantly, triggering onScroll -> draw().
+        // But React state (pixelsPerSecond, currentTime) lags 1-2 frames behind.
+        // Using old scale with new scrollLeft mathematically slams the playhead off-screen!
+        // Solution: ALWAYS read the authoritative synchronous sources for canvas math.
+        const pixelsPerSecond = pixelsPerSecondRef.current;
+        const duration = durationRef.current;
+        const segments = segmentsRef.current;
+        const currentTime = useVideoStore.getState().currentTime;
+
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
@@ -540,6 +551,9 @@ export const Timeline: React.FC = () => {
         setHoverCutPointIndex(null);
     }, []);
 
+    // --- Temporary Debug State ---
+    const [debugInfo, setDebugInfo] = useState<string>('');
+
     // --- Zoom: Smart Anchoring (JianYing/FCP Standard) ---
     const performZoom = useCallback((newPps: number) => {
         if (!containerRef.current) return;
@@ -552,16 +566,12 @@ export const Timeline: React.FC = () => {
         const currentSl = container.scrollLeft;
         const clientWidth = container.clientWidth;
         
-        // Always read the absolute fresh time from the store, bypassing React renders
         const ct = useVideoStore.getState().currentTime;
         const playheadPhysicalX = (ct * currentPps) - currentSl;
         
         let anchorTime: number;
         let anchorPhysicalX: number;
         
-        // JianYing standard logic:
-        // If playhead is inside viewport, anchor geometry directly on playhead.
-        // If playhead is outside viewport, anchor explicitly on the center of the viewport.
         if (playheadPhysicalX > 0 && playheadPhysicalX < clientWidth) {
             anchorTime = ct;
             anchorPhysicalX = playheadPhysicalX;
@@ -570,24 +580,45 @@ export const Timeline: React.FC = () => {
             anchorTime = (currentSl + anchorPhysicalX) / currentPps;
         }
 
-        // Compute where the scroll MUST be to maintain the exact pixel position of the anchor
         const safeTarget = Math.max(0, (anchorTime * clamped) - anchorPhysicalX);
 
-        // Instantly force native DOM width so scrollBounds don't reject the scroll (no rAF racing)
         const wrapper = container.firstElementChild as HTMLElement;
         const dur = useVideoStore.getState().duration;
         if (wrapper) {
             wrapper.style.width = `${Math.max(dur * clamped, clientWidth)}px`;
         }
 
-        // Execute scroll
         container.scrollLeft = safeTarget;
-
-        // Synchronously record baseline so the next key-repeat iteration is strictly accurate
-        pixelsPerSecondRef.current = clamped;
         
-        // Ping React asynchronously to hydrate the timeline UI marks
+        // DEBUG: Check if browser accepted our scrollLeft
+        const actualSl = container.scrollLeft;
+
+        pixelsPerSecondRef.current = clamped;
         useTimelineStore.getState().setPixelsPerSecond(clamped);
+
+        // DEBUG: Show all values on screen
+        const debugLines = [
+            `currentTime: ${ct.toFixed(1)}s`,
+            `oldPps: ${currentPps.toFixed(3)} → newPps: ${clamped.toFixed(3)}`,
+            `playheadPhysicalX: ${playheadPhysicalX.toFixed(1)}px (visible: ${playheadPhysicalX > 0 && playheadPhysicalX < clientWidth})`,
+            `anchorTime: ${anchorTime.toFixed(1)}s, anchorPhysicalX: ${anchorPhysicalX.toFixed(1)}px`,
+            `scrollLeft: wanted=${safeTarget.toFixed(0)} actual=${actualSl.toFixed(0)} ${Math.abs(actualSl - safeTarget) > 1 ? '⚠️CLIPPED!' : '✅OK'}`,
+            `clientWidth: ${clientWidth}px`,
+            `wrapperWidth: ${wrapper?.style.width}`,
+        ];
+        setDebugInfo(debugLines.join('\n'));
+
+        // Also check 50ms later if React overwrote the scroll
+        setTimeout(() => {
+            if (containerRef.current) {
+                const laterSl = containerRef.current.scrollLeft;
+                if (Math.abs(laterSl - safeTarget) > 1) {
+                    setDebugInfo(prev => prev + `\n⚠️ 50ms later: scrollLeft drifted to ${laterSl.toFixed(0)} (wanted ${safeTarget.toFixed(0)})`);
+                } else {
+                    setDebugInfo(prev => prev + `\n✅ 50ms later: scrollLeft stable at ${laterSl.toFixed(0)}`);
+                }
+            }
+        }, 50);
     }, []);
 
     // Handle Keyboard Shortcuts for Timeline (Cut points, Zoom)
@@ -670,6 +701,21 @@ export const Timeline: React.FC = () => {
                     </button>
                 </div>
             </div>
+            {/* DEBUG OVERLAY — temporary */}
+            {debugInfo && (
+                <pre style={{
+                    background: 'rgba(255,0,0,0.15)',
+                    color: '#ff8',
+                    fontSize: '10px',
+                    padding: '4px 8px',
+                    margin: 0,
+                    fontFamily: 'monospace',
+                    whiteSpace: 'pre-wrap',
+                    maxHeight: '100px',
+                    overflow: 'auto',
+                    borderBottom: '1px solid rgba(255,0,0,0.3)',
+                }}>{debugInfo}</pre>
+            )}
             <div
                 ref={containerRef}
                 className="timeline-scroll-container"

@@ -61,7 +61,10 @@
     min-height: 0;
     overflow-x: auto;
     overflow-y: hidden;
+    position: relative;
+    background: #0d0d14;
     cursor: crosshair;
+    overflow-anchor: none; /* Crucial: Do not let browser fight our manual zoom scroll math */
 }
 
 .timeline-scroll-container::-webkit-scrollbar {
