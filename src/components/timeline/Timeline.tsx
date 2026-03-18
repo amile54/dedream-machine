@@ -264,14 +264,19 @@ export const Timeline: React.FC = () => {
         const animate = () => {
             draw();
 
-            // Auto-pan if playing and playhead approaches the right edge
-            if (!isDraggingRef.current && containerRef.current) {
+            // Smooth Auto-Pan: Only engage if the playhead hits the right edge (85% to 100%).
+            // DO NOT snap back if headX < 0 (user scrolled ahead) or headX > viewWidth * 1.5.
+            // This allows the user to freely explore the timeline during playback.
+            if (useVideoStore.getState().isPlaying && !isDraggingRef.current && containerRef.current) {
                 const sl = containerRef.current.scrollLeft;
                 const headX = useVideoStore.getState().currentTime * pixelsPerSecondRef.current - sl;
                 const viewWidth = containerRef.current.clientWidth;
-                if (headX > viewWidth * 0.9 && headX < viewWidth * 1.5) {
-                    containerRef.current.scrollLeft += 3;
-                } else if (headX > viewWidth * 1.5 || headX < 0) {
+
+                if (headX > viewWidth * 0.85 && headX <= viewWidth * 1.1) {
+                    // Playhead is near the right edge, pan forward smoothly
+                    containerRef.current.scrollLeft += 2;
+                } else if (headX > viewWidth * 1.1 && headX < viewWidth * 1.5) {
+                    // Playhead went just offscreen, jump to center
                     containerRef.current.scrollLeft = (useVideoStore.getState().currentTime * pixelsPerSecondRef.current) - (viewWidth / 2);
                 }
             }
@@ -435,12 +440,10 @@ export const Timeline: React.FC = () => {
             anchorTime = (sl + anchorMouseX) / pixelsPerSecond;
             viewOffset = anchorMouseX;
         } else {
-            anchorTime = currentTime;
-            viewOffset = (currentTime * pixelsPerSecond) - sl;
-
-            if (viewOffset < 0 || viewOffset > containerWidth) {
-                viewOffset = containerWidth / 2;
-            }
+            // Anchor to the CENTER OF THE VIEWPORT (what the user is looking at),
+            // not the playhead, to prevent jarring jumps when zooming via buttons.
+            viewOffset = containerWidth / 2;
+            anchorTime = (sl + viewOffset) / pixelsPerSecond;
         }
 
         const newScrollLeft = Math.max(0, anchorTime * clamped - viewOffset);
