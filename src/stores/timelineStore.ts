@@ -2,7 +2,6 @@ import { create } from 'zustand';
 
 interface TimelineState {
     pixelsPerSecond: number;
-    scrollLeft: number;
     selectedSegmentId: string | null;
     hoveredTime: number | null;
 
@@ -10,7 +9,6 @@ interface TimelineState {
     setPixelsPerSecond: (pps: number) => void;
     zoomIn: () => void;
     zoomOut: () => void;
-    setScrollLeft: (left: number) => void;
     setSelectedSegmentId: (id: string | null) => void;
     setHoveredTime: (time: number | null) => void;
 }
@@ -21,7 +19,6 @@ const ZOOM_FACTOR = 1.3;
 
 export const useTimelineStore = create<TimelineState>((set, get) => ({
     pixelsPerSecond: 20,
-    scrollLeft: 0,
     selectedSegmentId: null,
     hoveredTime: null,
 
@@ -37,7 +34,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         set({ pixelsPerSecond: Math.max(MIN_PPS, pixelsPerSecond / ZOOM_FACTOR) });
     },
 
-    setScrollLeft: (left) => set({ scrollLeft: left }),
     setSelectedSegmentId: (id) => set({ selectedSegmentId: id }),
     setHoveredTime: (time) => set({ hoveredTime: time }),
 }));
