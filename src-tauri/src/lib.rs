@@ -231,6 +231,24 @@ async fn export_project_zip(workspace: String, output_path: String) -> Result<()
     Ok(())
 }
 
+#[tauri::command]
+fn delete_asset_file(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if p.exists() && p.is_file() {
+        fs::remove_file(p).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_asset_folder(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if p.exists() && p.is_dir() {
+        fs::remove_dir_all(p).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -259,6 +277,8 @@ pub fn run() {
             get_files_in_dir,
             get_stream_url,
             export_project_zip,
+            delete_asset_file,
+            delete_asset_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

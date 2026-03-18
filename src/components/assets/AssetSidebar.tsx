@@ -154,6 +154,33 @@ export const AssetSidebar: React.FC = () => {
                                                                         🔍 进入深入拉片环境
                                                                     </button>
                                                                 )}
+                                                                {asset.files && asset.files.length > 0 && (
+                                                                    <div className="asset-file-list">
+                                                                        <h4>包含文件:</h4>
+                                                                        <div className="asset-file-list-items">
+                                                                            {asset.files.map((file, idx) => (
+                                                                                <div key={idx} className="asset-file-item" title={file.path}>
+                                                                                    <span className="file-type">
+                                                                                        {file.type === 'screenshot' ? '🖼️' : file.type === 'audio' ? '🎵' : '🎬'}
+                                                                                    </span>
+                                                                                    <span className="file-name">{file.path.split('/').pop()}</span>
+                                                                                    <button
+                                                                                        className="remove-file-btn"
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            if (confirm(`确定要永久删除此${file.type === 'screenshot' ? '截图' : '文件'}吗？该操作同时会删除本地磁盘上的文件！`)) {
+                                                                                                useProjectStore.getState().removeAssetFile(asset.id, file.path);
+                                                                                            }
+                                                                                        }}
+                                                                                        title="删除此文件"
+                                                                                    >
+                                                                                        ✕
+                                                                                    </button>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         )}
                                                     </div>

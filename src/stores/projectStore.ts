@@ -34,6 +34,7 @@ interface ProjectState {
     updateAsset: (id: string, updates: Partial<Asset>) => void;
     removeAsset: (id: string) => void;
     addFileToAsset: (assetId: string, file: AssetFile) => void;
+    removeAssetFile: (assetId: string, filePath: string) => void;
 
     // Project I/O
     saveProject: () => Promise<void>;
@@ -336,15 +337,36 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     },
 
     removeAsset: (id) => {
-        const { project } = get();
-        if (!project) return;
+        const { workspace, project, rootProject, activeAssetId } = get();
+        if (!workspace || !project) return;
 
+        const assetToDelete = (project.assets || []).find(a => a.id === id);
         const assets = (project.assets || []).filter(a => a.id !== id);
 
         set({
             project: { ...project, assets, updatedAt: new Date().toISOString() },
             isDirty: true,
         });
+
+        // Trigger physical deletion in the background
+        if (assetToDelete) {
+            import('@tauri-apps/api/core').then(({ invoke }) => {
+                const pathParts = ['assets', assetToDelete.category, assetToDelete.name];
+                if (rootProject && activeAssetId) {
+                    const parent = rootProject.assets?.find(a => a.id === activeAssetId);
+                    if (parent) {
+                        pathParts.unshift('assets', 'segment_analysis', parent.name);
+                    }
+                }
+                import('@tauri-apps/api/path').then(({ join }) => {
+                    join(workspace, ...pathParts).then(targetFolderPath => {
+                        invoke('delete_asset_folder', { path: targetFolderPath }).catch(err => {
+                            console.warn('[removeAsset] Failed to delete asset folder on disk:', err);
+                        });
+                    });
+                });
+            });
+        }
     },
 
     addFileToAsset: (assetId, file) => {
@@ -358,6 +380,34 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         set({
             project: { ...project, assets, updatedAt: new Date().toISOString() },
             isDirty: true,
+        });
+    },
+
+    removeAssetFile: (assetId, filePath) => {
+        const { workspace, project } = get();
+        if (!workspace || !project) return;
+
+        const assets = (project.assets || []).map(a => {
+            if (a.id === assetId) {
+                return { ...a, files: a.files?.filter(f => f.path !== filePath) || [] };
+            }
+            return a;
+        });
+
+        set({
+            project: { ...project, assets, updatedAt: new Date().toISOString() },
+            isDirty: true,
+        });
+
+        // Trigger physical deletion in the background
+        import('@tauri-apps/api/core').then(({ invoke }) => {
+            import('@tauri-apps/api/path').then(({ join }) => {
+                join(workspace, filePath).then(absolutePath => {
+                    invoke('delete_asset_file', { path: absolutePath }).catch(err => {
+                        console.warn('[removeAssetFile] Failed to delete file on disk:', err);
+                    });
+                });
+            });
         });
     },
 
