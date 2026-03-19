@@ -439,6 +439,17 @@ export const VideoPlayer: React.FC = () => {
         }
     };
 
+    // Allow re-import: clear stale video state and trigger import flow
+    const handleReimportVideo = () => {
+        setProxyUrl(null);
+        setVideoError(null);
+        setIsTranscoding(false);
+        setTranscodingProgress(0);
+        // After state clears, the component re-renders showing the import UI,
+        // but we trigger import directly for better UX
+        setTimeout(() => handleImportVideo(), 100);
+    };
+
     // Show import UI if no video loaded
     if (!proxyUrl) {
         return (
@@ -491,6 +502,12 @@ export const VideoPlayer: React.FC = () => {
                                 style={{ padding: '6px 16px', background: 'rgba(100,100,200,0.3)', border: '1px solid rgba(100,100,200,0.5)', color: '#aaccff', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
                             >
                                 🔗 重新关联原始视频
+                            </button>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleReimportVideo(); }}
+                                style={{ padding: '6px 16px', background: 'rgba(100,200,100,0.3)', border: '1px solid rgba(100,200,100,0.5)', color: '#aaffaa', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
+                            >
+                                🎥 重新导入视频
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); setVideoError(null); }}

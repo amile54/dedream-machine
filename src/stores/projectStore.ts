@@ -458,6 +458,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
                     const sep = workspace.includes('\\') ? '\\' : '/';
                     project.proxyFilePath = workspace + sep + project.proxyFilePath;
                 }
+
+                // Verify proxy file actually exists on disk (user may have deleted it)
+                if (project.proxyFilePath) {
+                    const exists = await invoke<boolean>('check_file_exists', { path: project.proxyFilePath });
+                    if (!exists) {
+                        console.warn('[loadProject] Proxy file not found, clearing:', project.proxyFilePath);
+                        project.proxyFilePath = undefined as any;
+                    }
+                }
+
                 set({ workspace, project, rootProject: null, activeAssetId: null, isDirty: false, isLoading: false, undoStack: [] });
                 return true;
             }
