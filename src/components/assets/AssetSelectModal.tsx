@@ -20,6 +20,7 @@ export const AssetSelectModal: React.FC<AssetSelectModalProps> = ({
     modalMode
 }) => {
     const project = useProjectStore(s => s.project);
+    const rootProject = useProjectStore(s => s.rootProject);
     const addAsset = useProjectStore(s => s.addAsset);
 
     const [selectedCategory, setSelectedCategory] = useState<AssetCategory>('character');
@@ -28,6 +29,27 @@ export const AssetSelectModal: React.FC<AssetSelectModalProps> = ({
     const [newAssetName, setNewAssetName] = useState('');
     const [isAudio, setIsAudio] = useState(false);
     const [customFilename, setCustomFilename] = useState('');
+
+    // Guard: filter categories based on context
+    // segment_analysis only allowed for video clips in the main (root) view
+    const isInSubProject = !!rootProject;
+    const filteredCategories = ASSET_CATEGORIES.filter(cat => {
+        if (cat.value === 'segment_analysis') {
+            // Only show for clip mode (not screenshot)
+            if (modalMode !== 'clip') return false;
+            // Hide inside sub-projects (sub-projects can have other assets, not nested analysis)
+            if (isInSubProject) return false;
+            // Hide when audio-only is enabled (analysis needs video)
+            if (isAudio) return false;
+        }
+        return true;
+    });
+
+    // Guard: check if selected segment_analysis asset already has a clip
+    const selectedAsset = project?.assets?.find(a => a.id === selectedAssetId);
+    const isSegmentAnalysisFull = selectedCategory === 'segment_analysis'
+        && selectedAsset
+        && (selectedAsset.files?.length ?? 0) > 0;
 
     useEffect(() => {
         if (isOpen) {
@@ -90,7 +112,7 @@ export const AssetSelectModal: React.FC<AssetSelectModalProps> = ({
                                 setSelectedAssetId('');
                             }}
                         >
-                            {ASSET_CATEGORIES.map(({ value: val, label }) => (
+                            {filteredCategories.map(({ value: val, label }) => (
                                 <option key={val} value={val}>{label}</option>
                             ))}
                         </select>
@@ -178,10 +200,13 @@ export const AssetSelectModal: React.FC<AssetSelectModalProps> = ({
                     <button
                         className="btn-primary"
                         onClick={handleConfirm}
-                        disabled={isCreatingNew ? !newAssetName.trim() : !selectedAssetId}
+                        disabled={(isCreatingNew ? !newAssetName.trim() : !selectedAssetId) || !!isSegmentAnalysisFull}
                     >
                         确认保存
                     </button>
+                    {isSegmentAnalysisFull && (
+                        <p style={{ color: '#ff8888', fontSize: '0.75rem', marginTop: '4px' }}>⚠️ 该片段分析已有视频，每个分析只能存一段</p>
+                    )}
                 </div>
             </div>
         </div>

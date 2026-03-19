@@ -6,6 +6,7 @@ import './AssetSidebar.css';
 
 export const AssetSidebar: React.FC = () => {
     const project = useProjectStore(s => s.project);
+    const rootProject = useProjectStore(s => s.rootProject);
     const addAsset = useProjectStore(s => s.addAsset);
     const updateAsset = useProjectStore(s => s.updateAsset);
     const removeAsset = useProjectStore(s => s.removeAsset);
@@ -57,7 +58,10 @@ export const AssetSidebar: React.FC = () => {
                 <h3>资产管理</h3>
             </div>
             <div className="asset-sidebar-content">
-                {ASSET_CATEGORIES.map(({ value: category, label }) => {
+                {ASSET_CATEGORIES
+                    // Hide segment_analysis inside sub-projects
+                    .filter(cat => !(cat.value === 'segment_analysis' && !!rootProject))
+                    .map(({ value: category, label }) => {
                     const categoryAssets = assetsByCategory[category] || [];
                     const isExpanded = expandedCategories.has(category);
 
@@ -84,18 +88,23 @@ export const AssetSidebar: React.FC = () => {
 
                             {isExpanded && (
                                 <div className="asset-category-body">
-                                    <div className="add-asset-row">
-                                        <input
-                                            type="text"
-                                            placeholder={`添加${label}...`}
-                                            value={newAssetNames[category] || ''}
-                                            onChange={(e) => setNewAssetNames(prev => ({ ...prev, [category]: e.target.value }))}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') handleAddAsset(category);
-                                            }}
-                                        />
-                                        <button onClick={() => handleAddAsset(category)}>+</button>
-                                    </div>
+                                    {/* segment_analysis items are created via clip export, not manually */}
+                                    {category !== 'segment_analysis' ? (
+                                        <div className="add-asset-row">
+                                            <input
+                                                type="text"
+                                                placeholder={`添加${label}...`}
+                                                value={newAssetNames[category] || ''}
+                                                onChange={(e) => setNewAssetNames(prev => ({ ...prev, [category]: e.target.value }))}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') handleAddAsset(category);
+                                                }}
+                                            />
+                                            <button onClick={() => handleAddAsset(category)}>+</button>
+                                        </div>
+                                    ) : categoryAssets.length === 0 ? (
+                                        <p style={{ fontSize: '0.7rem', color: '#666', padding: '4px 8px', margin: 0 }}>截取视频片段时可存入此分类</p>
+                                    ) : null}
 
                                     {categoryAssets.length > 0 && (
                                         <div className="asset-list">
