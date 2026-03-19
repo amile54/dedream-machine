@@ -1,7 +1,76 @@
-# Tauri + React + Typescript
+# 🎬 拆梦机器 (DeDream Machine)
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+面向影视拉片场景的桌面端视频标注工具。基于 Tauri + React + TypeScript，使用 FFmpeg 进行视频处理。
 
-## Recommended IDE Setup
+## ✨ 核心功能
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+### 视频导入与播放
+- **即时导入**：MP4/MOV/WebM 等 WebKit 兼容格式秒开预览，后台静默转码优化版本并自动热替换
+- **格式兼容**：MKV/AVI/RMVB 等不兼容格式自动检测，显示转码进度后自动加载
+- **硬件加速**：优先使用 VideoToolbox (Mac) / NVENC (Win) / QSV (Intel)，失败自动回退软件编码
+- **本地流媒体服务器**：基于 Axum 的本地 HTTP 文件流，支持 Range 请求实现流畅拖拽
+
+### 视频切分与标注
+- **精确切分**：逐帧前进/后退 (← →)，快速跳转 (J/L)，一键切分 (B)
+- **智能校验**：切点自动检测镜头变化，不在镜头边界的切点标记为 ⚠️
+- **片段管理**：每个片段支持描述和类别标签，拖拽调整切点位置
+- **无限撤销**：Ctrl/Cmd+Z 撤销切分操作（最多 50 步历史）
+
+### 叙事结构分析
+- **多层文本块**：支持故事梗概、幕结构、大情节、小情节等自定义文本区块
+- **片段分析**：可对单个视频片段进入子项目做深层分析
+
+### 资产管理
+- **截图/片段导出**：一键截图或导出视频/音频片段，自动归类到资产库
+- **字幕支持**：自动识别内嵌字幕轨道，支持 SRT 文件导入
+- **项目打包**：一键导出 ZIP 归档，方便分享和质检
+
+### 跨设备协作
+- **项目可移植**：代理文件路径自动相对化，工作文件夹可直接拷贝到其他电脑
+- **原始视频重关联**：路径变更时支持重新指定原始视频位置
+- **历史数据兼容**：支持从 CSV 等格式导入已有的拉片标注数据
+
+## 🚀 快速开始
+
+### 环境要求
+- Node.js 18+
+- Rust (最新稳定版)
+- FFmpeg / FFprobe（已包含在 sidecar 中）
+
+### 开发运行
+```bash
+npm install
+npm run tauri dev
+```
+
+### 构建发布
+```bash
+npm run tauri build
+```
+
+## ⌨️ 快捷键
+
+| 快捷键 | 功能 |
+|--------|------|
+| `Space` | 播放/暂停 |
+| `←` / `→` | 逐帧前进/后退 |
+| `J` / `L` | 快退/快进 5 秒 |
+| `B` | 在当前位置添加切点 |
+| `Cmd/Ctrl + Z` | 撤销切分 |
+| `Cmd/Ctrl + S` | 保存项目 |
+
+## 📁 项目结构
+
+```
+工作文件夹/
+├── project.json     # 项目数据（片段、文本块、资产、元信息）
+├── proxy.mp4        # 转码后的 720p 编辑代理
+└── assets/          # 截图、导出片段等资产文件
+```
+
+## 🏗 技术栈
+
+- **前端**：React 18 + TypeScript + Zustand (状态管理)
+- **后端**：Tauri 2 (Rust) + Axum (本地流媒体服务器)
+- **视频处理**：FFmpeg / FFprobe (sidecar)
+- **构建**：Vite 7
