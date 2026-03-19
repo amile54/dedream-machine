@@ -382,8 +382,32 @@ export const VideoPlayer: React.FC = () => {
         const errMsg = err?.message || '未知错误';
         const errCode = err?.code || 0;
         console.error('[VideoPlayer] Video error:', errCode, errMsg, 'src:', proxyUrl);
-        setVideoError(`播放错误(${errCode}): ${errMsg} `);
+        setVideoError(`播放错误(${errCode}): ${errMsg}`);
     }, [proxyUrl]);
+
+    // Re-link original video path (for when the project is opened on a different computer)
+    const handleRelinkVideo = async () => {
+        const file = await open({
+            multiple: false,
+            title: '重新关联原始视频文件',
+            filters: [{
+                name: '视频文件',
+                extensions: ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'm4v', 'rmvb', 'ts', 'm2ts', 'vob', 'mpg', 'mpeg', '3gp'],
+            }],
+        });
+        if (!file) return;
+
+        const newPath = file as string;
+        const store = useProjectStore.getState();
+        if (store.project) {
+            store.project.videoFilePath = newPath;
+            store.setProject({ ...store.project });
+            setOriginalVideoPath(newPath);
+            setVideoError(null);
+            await store.saveProject();
+            console.log('[VideoPlayer] Re-linked original video to:', newPath);
+        }
+    };
 
     // Show import UI if no video loaded
     if (!proxyUrl) {
@@ -418,7 +442,20 @@ export const VideoPlayer: React.FC = () => {
                     <div className="video-error-overlay" onClick={(e) => { e.stopPropagation(); setVideoError(null); }} style={{ cursor: 'pointer', zIndex: 50 }}>
                         <p>⚠️ {videoError}</p>
                         <p className="error-url">路径: {proxyUrl}</p>
-                        <p style={{ fontSize: '0.75rem', color: '#aaa', marginTop: '8px' }}>点击关闭</p>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '10px', justifyContent: 'center' }}>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleRelinkVideo(); }}
+                                style={{ padding: '6px 16px', background: 'rgba(100,100,200,0.3)', border: '1px solid rgba(100,100,200,0.5)', color: '#aaccff', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
+                            >
+                                🔗 重新关联原始视频
+                            </button>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setVideoError(null); }}
+                                style={{ padding: '6px 16px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: '#aaa', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
+                            >
+                                关闭
+                            </button>
+                        </div>
                     </div>
                 )}
                 <video
