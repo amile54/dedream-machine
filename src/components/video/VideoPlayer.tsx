@@ -192,6 +192,7 @@ export const VideoPlayer: React.FC = () => {
             // Phase 1: Quick probe — get metadata instantly (<0.5s)
             const info = await quickProbe(videoPath);
             setFps(info.fps);
+            setDuration(info.duration); // Always set duration from FFprobe so timeline works immediately
             setImportProgress(10);
             setImportStatus('正在准备预览...');
 
@@ -202,17 +203,11 @@ export const VideoPlayer: React.FC = () => {
                 resolution: `${info.width}x${info.height}`,
             });
 
-            // Phase 2: Immediately play original file via streaming server
+            // Create project and initialize segments
             createNewProject(videoPath);
             setOriginalVideoPath(videoPath);
 
-            // Try to play the original video directly first
-            const rawUrl = await invoke<string>('get_stream_url', { filePath: videoPath });
-            console.log('[VideoPlayer] Playing original file instantly:', rawUrl);
-            setProxyUrl(rawUrl);
-            setProxyFilePath(videoPath); // temporarily point to original
-
-            // Initialize segments with full duration
+            // Initialize segments with full duration from FFprobe
             const store = useProjectStore.getState();
             if (store.project) {
                 store.project.segments = [{
@@ -225,14 +220,29 @@ export const VideoPlayer: React.FC = () => {
                 }];
             }
 
+            // Check if the format is likely WebKit-compatible for instant preview
+            const webkitPlayable = ['mp4', 'mov', 'webm', 'm4v'].includes(info.container.toLowerCase())
+                && !['hevc', 'h265', 'vp9'].includes(info.videoCodec.toLowerCase());
+
+            if (webkitPlayable) {
+                // Instant preview: play original file directly
+                const rawUrl = await invoke<string>('get_stream_url', { filePath: videoPath });
+                console.log('[VideoPlayer] WebKit-compatible format, playing instantly:', rawUrl);
+                setProxyUrl(rawUrl);
+                setProxyFilePath(videoPath);
+            } else {
+                console.log('[VideoPlayer] Non-WebKit format detected, waiting for transcode:', info.container, info.videoCodec);
+                // Don't set proxyUrl yet — we'll wait for the transcode
+            }
+
             await saveProject();
 
-            // Done! User can now interact with the video
+            // Done with the synchronous part — user sees the UI
             setIsImporting(false);
             setImportProgress(null);
             setImportStatus('');
 
-            // Phase 3: Background transcoding — fire and forget
+            // Phase 2: Background transcoding
             setIsTranscoding(true);
             setTranscodingProgress(0);
 
@@ -251,19 +261,17 @@ export const VideoPlayer: React.FC = () => {
                 const newUrl = await invoke<string>('get_stream_url', { filePath: proxyPath });
                 setProxyUrl(newUrl);
                 setProxyFilePath(proxyPath);
+                setVideoError(null); // Clear any lingering errors
 
                 // Restore playback position after the new video loads
-                const waitForLoad = () => {
-                    const vid = useVideoStore.getState().videoRef;
-                    if (vid) {
-                        const onLoaded = () => {
-                            vid.currentTime = rememberedTime;
-                            vid.removeEventListener('loadedmetadata', onLoaded);
-                        };
-                        vid.addEventListener('loadedmetadata', onLoaded);
-                    }
-                };
-                waitForLoad();
+                const vid = useVideoStore.getState().videoRef;
+                if (vid) {
+                    const onLoaded = () => {
+                        vid.currentTime = rememberedTime;
+                        vid.removeEventListener('loadedmetadata', onLoaded);
+                    };
+                    vid.addEventListener('loadedmetadata', onLoaded);
+                }
 
                 setIsTranscoding(false);
                 setTranscodingProgress(0);
@@ -274,7 +282,6 @@ export const VideoPlayer: React.FC = () => {
                 console.error('[VideoPlayer] Background transcode failed:', err);
                 setIsTranscoding(false);
                 setTranscodingProgress(0);
-                // Keep using original file — it still works, just slower seeking
             });
 
         } catch (err) {
@@ -420,10 +427,23 @@ export const VideoPlayer: React.FC = () => {
                         <div className="progress-bar">
                             <div
                                 className="progress-bar-fill"
-                                style={{ width: `${importProgress || 0}% ` }}
+                                style={{ width: `${importProgress || 0}%` }}
                             />
                         </div>
                         <p className="progress-percent">{importProgress || 0}%</p>
+                    </div>
+                ) : isTranscoding ? (
+                    <div className="import-progress">
+                        <div className="import-progress-icon">🎬</div>
+                        <p className="import-progress-text">视频格式不兼容，正在后台优化中...</p>
+                        <div className="progress-bar">
+                            <div
+                                className="progress-bar-fill"
+                                style={{ width: `${transcodingProgress}%` }}
+                            />
+                        </div>
+                        <p className="progress-percent">{transcodingProgress}%</p>
+                        <p style={{ fontSize: '0.75rem', color: '#888', marginTop: '0.5rem' }}>优化完成后将自动播放，请稍候</p>
                     </div>
                 ) : (
                     <button className="import-button" onClick={handleImportVideo}>
