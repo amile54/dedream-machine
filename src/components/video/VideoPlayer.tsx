@@ -203,22 +203,30 @@ export const VideoPlayer: React.FC = () => {
                 resolution: `${info.width}x${info.height}`,
             });
 
-            // Create project and initialize segments
-            createNewProject(videoPath);
-            setOriginalVideoPath(videoPath);
-
-            // Initialize segments with full duration from FFprobe
-            const store = useProjectStore.getState();
-            if (store.project) {
-                store.project.segments = [{
-                    id: crypto.randomUUID(),
-                    index: 1,
-                    startTime: 0,
-                    endTime: info.duration,
-                    description: '',
-                    category: '',
-                }];
+            // If a project already exists (e.g. from CSV import), preserve its data
+            // and just update the video path. Only create a blank project if none exists.
+            const existingProject = useProjectStore.getState().project;
+            if (existingProject && existingProject.segments.length > 0) {
+                // Preserve existing segments/textBlocks, just update the video path
+                existingProject.videoFilePath = videoPath;
+                useProjectStore.getState().setProject({ ...existingProject });
+                console.log('[VideoPlayer] Existing project found with', existingProject.segments.length, 'segments — preserved');
+            } else {
+                // No existing data — create a fresh project with one full-duration segment
+                createNewProject(videoPath);
+                const store = useProjectStore.getState();
+                if (store.project) {
+                    store.project.segments = [{
+                        id: crypto.randomUUID(),
+                        index: 1,
+                        startTime: 0,
+                        endTime: info.duration,
+                        description: '',
+                        category: '',
+                    }];
+                }
             }
+            setOriginalVideoPath(videoPath);
 
             // Check if the format is likely WebKit-compatible for instant preview
             const webkitPlayable = ['mp4', 'mov', 'webm', 'm4v'].includes(info.container.toLowerCase())
