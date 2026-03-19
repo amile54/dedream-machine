@@ -45,6 +45,8 @@ export const VideoPlayer: React.FC = () => {
         setTranscodingProgress,
         stepFrame,
         skipSeconds,
+        playbackRate,
+        cyclePlaybackRate,
     } = useVideoStore();
 
     const [importProgress, setImportProgress] = useState<number | null>(null);
@@ -644,6 +646,14 @@ export const VideoPlayer: React.FC = () => {
                     </button>
                     <button className="ctrl-btn" onClick={() => skipSeconds(5)} title="前进5秒 (L)">
                         ⏩
+                    </button>
+                    <button
+                        className={`ctrl-btn ${playbackRate !== 1 ? 'ctrl-btn--active' : ''}`}
+                        onClick={cyclePlaybackRate}
+                        title="切换播放速度"
+                        style={{ fontSize: '0.7rem', fontWeight: playbackRate !== 1 ? 'bold' : 'normal', minWidth: '36px' }}
+                    >
+                        {playbackRate === 1 ? '1x' : `${playbackRate}x`}
                     </button>
                 </div>
 

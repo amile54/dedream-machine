@@ -12,6 +12,7 @@ interface VideoState {
     originalVideoPath: string | null;
     isTranscoding: boolean;
     transcodingProgress: number;
+    playbackRate: number;
 
     // Actions
     setVideoRef: (ref: HTMLVideoElement | null) => void;
@@ -30,6 +31,7 @@ interface VideoState {
     seekTo: (time: number) => void;
     stepFrame: (direction: 1 | -1) => void;
     skipSeconds: (seconds: number) => void;
+    cyclePlaybackRate: () => void;
     reset: () => void;
 }
 
@@ -44,6 +46,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
     originalVideoPath: null,
     isTranscoding: false,
     transcodingProgress: 0,
+    playbackRate: 1,
 
     setVideoRef: (ref) => set({ videoRef: ref }),
     setPlaying: (playing) => set({ isPlaying: playing }),
@@ -93,6 +96,15 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         videoRef.currentTime = Math.max(0, Math.min(duration, videoRef.currentTime + seconds));
     },
 
+    cyclePlaybackRate: () => {
+        const { videoRef, playbackRate } = get();
+        const rates = [1, 1.5, 2, 3];
+        const currentIdx = rates.indexOf(playbackRate);
+        const nextRate = rates[(currentIdx + 1) % rates.length];
+        if (videoRef) videoRef.playbackRate = nextRate;
+        set({ playbackRate: nextRate });
+    },
+
     reset: () => {
         const { videoRef } = get();
         if (videoRef) {
@@ -107,6 +119,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
             originalVideoPath: null,
             isTranscoding: false,
             transcodingProgress: 0,
+            playbackRate: 1,
         });
     },
 }));

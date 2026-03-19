@@ -159,6 +159,11 @@
     height: 40px;
 }
 
+.ctrl-btn--active {
+    color: #66ddff;
+    background: rgba(100, 200, 255, 0.15);
+}
+
 .time-display {
     font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
     font-size: 0.85rem;
