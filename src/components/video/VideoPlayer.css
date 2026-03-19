@@ -166,6 +166,18 @@
     letter-spacing: 0.02em;
 }
 
+.transcoding-indicator {
+    font-size: 0.75rem;
+    color: #ffaa44;
+    margin-left: 0.6rem;
+    animation: transcoding-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes transcoding-pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}
+
 .volume-control {
     display: flex;
     align-items: center;

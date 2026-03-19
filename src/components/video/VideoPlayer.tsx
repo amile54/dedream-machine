@@ -6,7 +6,7 @@ import { formatTime } from '../../utils/timeFormat';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
-import { smartImport, takeScreenshot, getSubtitleTracks, extractSubtitleTrack } from '../../services/ffmpegService';
+import { quickProbe, backgroundTranscode, takeScreenshot, getSubtitleTracks, extractSubtitleTrack } from '../../services/ffmpegService';
 import type { SubtitleTrackInfo } from '../../services/ffmpegService';
 import { parseSrt } from '../../services/subtitleParser';
 import { AssetSelectModal } from '../assets/AssetSelectModal';
@@ -30,6 +30,8 @@ export const VideoPlayer: React.FC = () => {
         duration,
         volume,
         proxyUrl,
+        isTranscoding,
+        transcodingProgress,
         setVideoRef,
         setPlaying,
         setCurrentTime,
@@ -38,6 +40,8 @@ export const VideoPlayer: React.FC = () => {
         setVolume,
         setProxyUrl,
         setOriginalVideoPath,
+        setIsTranscoding,
+        setTranscodingProgress,
         stepFrame,
         skipSeconds,
     } = useVideoStore();
@@ -185,36 +189,28 @@ export const VideoPlayer: React.FC = () => {
         setVideoError(null);
 
         try {
-            // Smart import: decides whether to play directly or remux
-            const { playablePath, info, strategy } = await smartImport(
-                videoPath,
-                workspace,
-                (percent, status) => {
-                    setImportProgress(percent);
-                    setImportStatus(status);
-                },
-            );
-
+            // Phase 1: Quick probe — get metadata instantly (<0.5s)
+            const info = await quickProbe(videoPath);
             setFps(info.fps);
+            setImportProgress(10);
+            setImportStatus('正在准备预览...');
 
-            console.log('[VideoPlayer] Import complete:', {
-                strategy,
+            console.log('[VideoPlayer] Quick probe complete:', {
                 codec: info.videoCodec,
                 container: info.container,
                 duration: info.duration,
-                resolution: `${info.width}x${info.height} `,
-                playablePath,
+                resolution: `${info.width}x${info.height}`,
             });
 
-            // Create project
+            // Phase 2: Immediately play original file via streaming server
             createNewProject(videoPath);
-            setProxyFilePath(playablePath);
             setOriginalVideoPath(videoPath);
 
-            // Get the video URL via Tauri proxy server (supports Range requests & bypasses WebKit limitations)
-            const url = await invoke<string>('get_stream_url', { filePath: playablePath });
-            console.log('[VideoPlayer] Setting video URL via streaming server:', url);
-            setProxyUrl(url);
+            // Try to play the original video directly first
+            const rawUrl = await invoke<string>('get_stream_url', { filePath: videoPath });
+            console.log('[VideoPlayer] Playing original file instantly:', rawUrl);
+            setProxyUrl(rawUrl);
+            setProxyFilePath(videoPath); // temporarily point to original
 
             // Initialize segments with full duration
             const store = useProjectStore.getState();
@@ -230,10 +226,60 @@ export const VideoPlayer: React.FC = () => {
             }
 
             await saveProject();
+
+            // Done! User can now interact with the video
+            setIsImporting(false);
+            setImportProgress(null);
+            setImportStatus('');
+
+            // Phase 3: Background transcoding — fire and forget
+            setIsTranscoding(true);
+            setTranscodingProgress(0);
+
+            backgroundTranscode(
+                videoPath,
+                workspace,
+                (percent, _status) => {
+                    setTranscodingProgress(percent);
+                },
+            ).then(async (proxyPath) => {
+                console.log('[VideoPlayer] Background transcode complete:', proxyPath);
+
+                // Hot-swap: remember time, swap URL, restore time
+                const rememberedTime = useVideoStore.getState().currentTime;
+
+                const newUrl = await invoke<string>('get_stream_url', { filePath: proxyPath });
+                setProxyUrl(newUrl);
+                setProxyFilePath(proxyPath);
+
+                // Restore playback position after the new video loads
+                const waitForLoad = () => {
+                    const vid = useVideoStore.getState().videoRef;
+                    if (vid) {
+                        const onLoaded = () => {
+                            vid.currentTime = rememberedTime;
+                            vid.removeEventListener('loadedmetadata', onLoaded);
+                        };
+                        vid.addEventListener('loadedmetadata', onLoaded);
+                    }
+                };
+                waitForLoad();
+
+                setIsTranscoding(false);
+                setTranscodingProgress(0);
+
+                await useProjectStore.getState().saveProject();
+                console.log('[VideoPlayer] Hot-swap to optimized proxy complete');
+            }).catch((err) => {
+                console.error('[VideoPlayer] Background transcode failed:', err);
+                setIsTranscoding(false);
+                setTranscodingProgress(0);
+                // Keep using original file — it still works, just slower seeking
+            });
+
         } catch (err) {
             console.error('Import failed:', err);
-            alert(`导入视频失败: ${err} `);
-        } finally {
+            alert(`导入视频失败: ${err}`);
             setIsImporting(false);
             setImportProgress(null);
             setImportStatus('');
@@ -497,6 +543,11 @@ export const VideoPlayer: React.FC = () => {
                     <span className="time-display">
                         {formatTime(currentTime, true)} / {formatTime(duration)}
                     </span>
+                    {isTranscoding && (
+                        <span className="transcoding-indicator" title={`后台优化中 ${transcodingProgress}%`}>
+                            ⏳ {transcodingProgress}%
+                        </span>
+                    )}
                 </div>
 
                 <div className="controls-right">

@@ -9,6 +9,8 @@ interface VideoState {
     volume: number;
     proxyUrl: string | null;
     originalVideoPath: string | null;
+    isTranscoding: boolean;
+    transcodingProgress: number;
 
     // Actions
     setVideoRef: (ref: HTMLVideoElement | null) => void;
@@ -19,6 +21,8 @@ interface VideoState {
     setVolume: (volume: number) => void;
     setProxyUrl: (url: string | null) => void;
     setOriginalVideoPath: (path: string | null) => void;
+    setIsTranscoding: (v: boolean) => void;
+    setTranscodingProgress: (p: number) => void;
 
     // Playback control
     togglePlay: () => void;
@@ -36,6 +40,8 @@ export const useVideoStore = create<VideoState>((set, get) => ({
     volume: 1,
     proxyUrl: null,
     originalVideoPath: null,
+    isTranscoding: false,
+    transcodingProgress: 0,
 
     setVideoRef: (ref) => set({ videoRef: ref }),
     setPlaying: (playing) => set({ isPlaying: playing }),
@@ -49,6 +55,8 @@ export const useVideoStore = create<VideoState>((set, get) => ({
     },
     setProxyUrl: (url) => set({ proxyUrl: url }),
     setOriginalVideoPath: (path) => set({ originalVideoPath: path }),
+    setIsTranscoding: (v) => set({ isTranscoding: v }),
+    setTranscodingProgress: (p) => set({ transcodingProgress: p }),
 
     togglePlay: () => {
         const { videoRef, isPlaying } = get();

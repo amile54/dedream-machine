@@ -126,31 +126,31 @@ export async function getVideoInfo(videoPath: string): Promise<VideoInfo> {
 }
 
 /**
- * Smart import: Generates a standard 720p edit proxy for guaranteed WebKit compatibility.
- * 
- * Philosophy: Proxy-First approach.
- * WebKit is extremely strict about codecs. Trying to "direct play" user files 
- * (like MP4 with AC3 audio or 10-bit color) results in black screens.
- * Therefore, we ALWAYS generate a standard 720p H.264/AAC proxy file.
- * We use macOS hardware acceleration (h264_videotoolbox) to make this as fast as possible.
+ * Quick probe: Get video metadata only. Returns almost instantly (<0.5s).
  */
-export async function smartImport(
+export async function quickProbe(inputPath: string): Promise<VideoInfo> {
+    return getVideoInfo(inputPath);
+}
+
+/**
+ * Background transcode: Generates a standard 720p edit proxy.
+ * Uses hardware acceleration when available. 
+ * Designed to be called fire-and-forget after instant import.
+ */
+export async function backgroundTranscode(
     inputPath: string,
     workspacePath: string,
     onProgress?: (percent: number, status: string) => void,
-): Promise<{ playablePath: string; info: VideoInfo; strategy: string }> {
-    onProgress?.(0, '正在分析视频...');
+): Promise<string> {
     const info = await getVideoInfo(inputPath);
-
     const proxyPath = await join(workspacePath, 'proxy.mp4');
     const encoder = await detectHWEncoder();
     const isHW = encoder !== 'libx264';
-    const strategy = `生成标准化剪辑代理 (${isHW ? '硬件加速' : '软件编码'})`;
+    const strategy = `后台优化中 (${isHW ? '硬件加速' : '软件编码'})`;
 
     onProgress?.(5, strategy);
-    console.log('[smartImport] Video info:', info, 'encoder:', encoder);
+    console.log('[backgroundTranscode] Starting proxy generation:', encoder);
 
-    // Build FFmpeg args with the detected encoder
     const buildArgs = (enc: string): string[] => {
         const a: string[] = ['-v', 'warning', '-y', '-i', inputPath];
         if (enc === 'h264_videotoolbox') {
@@ -162,7 +162,9 @@ export async function smartImport(
         } else {
             a.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '26', '-vf', 'scale=-2:720');
         }
+        // Limit thread count to reduce CPU pressure during concurrent playback
         a.push(
+            '-threads', '2',
             '-c:a', 'aac', '-ac', '2', '-b:a', '192k',
             '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
             '-progress', 'pipe:1', proxyPath
@@ -170,23 +172,37 @@ export async function smartImport(
         return a;
     };
 
-    // Try with detected encoder first; if it fails, retry with safe libx264
     try {
         const cmd = Command.sidecar('bin/ffmpeg', buildArgs(encoder));
-        await executeWithProgress(cmd, info.duration, onProgress, '代理生成中...');
+        await executeWithProgress(cmd, info.duration, onProgress, strategy);
     } catch (err) {
         if (encoder !== 'libx264') {
-            console.warn(`[smartImport] ${encoder} failed, falling back to libx264:`, err);
+            console.warn(`[backgroundTranscode] ${encoder} failed, falling back to libx264:`, err);
             onProgress?.(5, '硬件编码失败，已自动切换为软件编码...');
             const cmd2 = Command.sidecar('bin/ffmpeg', buildArgs('libx264'));
             await executeWithProgress(cmd2, info.duration, onProgress, '软件编码中...');
         } else {
-            throw err; // libx264 itself failed, nothing to fall back to
+            throw err;
         }
     }
 
-    onProgress?.(100, '导入完成');
-    return { playablePath: proxyPath, info, strategy };
+    onProgress?.(100, '优化完成');
+    return proxyPath;
+}
+
+/**
+ * Smart import: Legacy wrapper that combines quickProbe + backgroundTranscode.
+ * Still used by sub-project clip exports where waiting is acceptable.
+ */
+export async function smartImport(
+    inputPath: string,
+    workspacePath: string,
+    onProgress?: (percent: number, status: string) => void,
+): Promise<{ playablePath: string; info: VideoInfo; strategy: string }> {
+    onProgress?.(0, '正在分析视频...');
+    const info = await quickProbe(inputPath);
+    const playablePath = await backgroundTranscode(inputPath, workspacePath, onProgress);
+    return { playablePath, info, strategy: '标准化代理生成' };
 }
 
 /**

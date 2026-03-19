@@ -52,6 +52,7 @@ export const Timeline: React.FC = () => {
     const currentTime = useVideoStore(s => s.currentTime);
     const proxyUrl = useVideoStore(s => s.proxyUrl);
     const seekTo = useVideoStore(s => s.seekTo);
+    const isTranscoding = useVideoStore(s => s.isTranscoding);
 
     const project = useProjectStore(s => s.project);
 
@@ -396,8 +397,18 @@ export const Timeline: React.FC = () => {
     }, [draw]);
 
     // --- Async Background Thumbnail Extractor ---
+    // Clear thumbnail cache when transcoding completes (proxy video changed)
     useEffect(() => {
-        if (!proxyUrl || !extractVideoRef.current) return;
+        if (!isTranscoding && thumbnailCache.current.size > 0) {
+            // Transcoding just finished — clear stale thumbnails from old source
+            thumbnailCache.current.forEach(bmp => bmp.close());
+            thumbnailCache.current.clear();
+            if (drawRef.current) drawRef.current();
+        }
+    }, [isTranscoding]);
+
+    useEffect(() => {
+        if (!proxyUrl || !extractVideoRef.current || isTranscoding) return;
 
         let active = true;
 
