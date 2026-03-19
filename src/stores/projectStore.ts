@@ -148,7 +148,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         set({
             project: { ...project, segments: newSegments, updatedAt: new Date().toISOString() },
             isDirty: true,
-            undoStack: [...get().undoStack, oldSegments], // save history
+            undoStack: [...get().undoStack, oldSegments].slice(-50), // cap at 50 entries
         });
     },
 
@@ -179,7 +179,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         set({
             project: { ...project, segments: newSegments, updatedAt: new Date().toISOString() },
             isDirty: true,
-            undoStack: [...get().undoStack, oldSegments], // save history
+            undoStack: [...get().undoStack, oldSegments].slice(-50),
         });
     },
 

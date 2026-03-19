@@ -76,7 +76,7 @@ export const Timeline: React.FC = () => {
 
     // --- Auto Cut Error Detection (Background Async) ---
     useEffect(() => {
-        if (!project || !project.videoFilePath) return;
+        if (!project || !project.videoFilePath || isTranscoding) return;
 
         // Find segments that actively need verification (start boundary > 0, unverified)
         const unverified = segments.filter(s => s.startTime > 0 && s.isCutError === undefined);
