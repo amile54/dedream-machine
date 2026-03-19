@@ -508,6 +508,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
         // Reset state and load new project
         set({ workspace: null, project: null, rootProject: null, activeAssetId: null, isDirty: false, undoStack: [] });
+
+        // Also reset the video playback state (separate store)
+        const { useVideoStore } = await import('./videoStore');
+        useVideoStore.getState().reset();
+
         const hasExisting = await loadProject(folder as string);
         if (!hasExisting) {
             set({ workspace: folder as string });

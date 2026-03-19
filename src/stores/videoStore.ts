@@ -29,6 +29,7 @@ interface VideoState {
     seekTo: (time: number) => void;
     stepFrame: (direction: 1 | -1) => void;
     skipSeconds: (seconds: number) => void;
+    reset: () => void;
 }
 
 export const useVideoStore = create<VideoState>((set, get) => ({
@@ -87,5 +88,22 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         const { videoRef, duration } = get();
         if (!videoRef) return;
         videoRef.currentTime = Math.max(0, Math.min(duration, videoRef.currentTime + seconds));
+    },
+
+    reset: () => {
+        const { videoRef } = get();
+        if (videoRef) {
+            videoRef.pause();
+        }
+        set({
+            isPlaying: false,
+            currentTime: 0,
+            duration: 0,
+            fps: 24,
+            proxyUrl: null,
+            originalVideoPath: null,
+            isTranscoding: false,
+            transcodingProgress: 0,
+        });
     },
 }));
