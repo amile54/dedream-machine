@@ -320,13 +320,13 @@ export const VideoPlayer: React.FC = () => {
     };
 
     const handleScreenshotClick = () => {
-        if (!workspace || !project?.videoFilePath) return;
+        if (!workspace || !project?.videoFilePath || !proxyUrl || isTranscoding) return;
         setModalMode('screenshot');
         setIsAssetModalOpen(true);
     };
 
     const handleClipClick = () => {
-        if (!workspace || !project?.videoFilePath) return;
+        if (!workspace || !project?.videoFilePath || !proxyUrl || isTranscoding) return;
         setIsClippingMode(true);
         setClipStartTime(currentTime);
         setClipEndTime(Math.min(currentTime + 5, duration));
@@ -373,6 +373,11 @@ export const VideoPlayer: React.FC = () => {
                 const { exportClip } = await import('../../services/ffmpegService');
 
                 showToast(`正在提取片段...请稍候`);
+                // Validate clip range
+                if (clipStartTime >= clipEndTime) {
+                    showToast('⚠️ 截取范围无效：起点必须在终点之前');
+                    return;
+                }
                 await exportClip(project.videoFilePath, clipStartTime, clipEndTime, outputPath, isAudio);
 
                 // Record file to asset

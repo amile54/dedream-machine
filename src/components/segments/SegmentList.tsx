@@ -92,7 +92,9 @@ export const SegmentList: React.FC = () => {
                                         className="remove-cut-btn"
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            removeCutPoint(i - 1);
+                                            if (confirm('确定删除此切点？删除后该片段将合并到上一片段。')) {
+                                                removeCutPoint(i - 1);
+                                            }
                                         }}
                                         title="删除此切点（合并到上一个片段）"
                                     >
