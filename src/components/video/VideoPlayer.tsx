@@ -164,7 +164,7 @@ export const VideoPlayer: React.FC = () => {
     }, [isPlaying, proxyUrl, setPlaying]);
 
     const handleImportVideo = async () => {
-        if (!workspace) return;
+        if (!workspace || isImporting || isTranscoding) return; // Guard against double-click and mid-transcode re-import
 
         const file = await open({
             multiple: false,
@@ -237,6 +237,9 @@ export const VideoPlayer: React.FC = () => {
 
             await saveProject();
 
+            // Capture the workspace at import time to detect project-switch
+            const importWorkspace = workspace;
+
             // Done with the synchronous part — user sees the UI
             setIsImporting(false);
             setImportProgress(null);
@@ -253,6 +256,15 @@ export const VideoPlayer: React.FC = () => {
                     setTranscodingProgress(percent);
                 },
             ).then(async (proxyPath) => {
+                // Guard: if user switched projects during transcoding, discard this result
+                const currentWorkspace = useProjectStore.getState().workspace;
+                if (currentWorkspace !== importWorkspace) {
+                    console.warn('[VideoPlayer] Project switched during transcoding, discarding result');
+                    setIsTranscoding(false);
+                    setTranscodingProgress(0);
+                    return;
+                }
+
                 console.log('[VideoPlayer] Background transcode complete:', proxyPath);
 
                 // Hot-swap: remember time, swap URL, restore time
@@ -389,7 +401,10 @@ export const VideoPlayer: React.FC = () => {
         const errMsg = err?.message || '未知错误';
         const errCode = err?.code || 0;
         console.error('[VideoPlayer] Video error:', errCode, errMsg, 'src:', proxyUrl);
-        setVideoError(`播放错误(${errCode}): ${errMsg}`);
+        // Don't show error overlay during transcoding — the video isn't expected to play yet
+        if (!useVideoStore.getState().isTranscoding) {
+            setVideoError(`播放错误(${errCode}): ${errMsg}`);
+        }
     }, [proxyUrl]);
 
     // Re-link original video path (for when the project is opened on a different computer)

@@ -60,7 +60,9 @@ export function useKeyboardShortcuts() {
             case 'B':
                 if (!isCmd) {
                     e.preventDefault();
-                    if (duration > 0) {
+                    // Only allow cuts when there's an active playable video
+                    const hasVideo = useVideoStore.getState().proxyUrl !== null;
+                    if (duration > 0 && hasVideo) {
                         addCutPoint(currentTime);
                     }
                 }
