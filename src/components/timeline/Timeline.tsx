@@ -3,6 +3,7 @@ import { useVideoStore } from '../../stores/videoStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useTimelineStore } from '../../stores/timelineStore';
 import { formatTimeCompact } from '../../utils/timeFormat';
+import { snapToFrame } from '../../utils/frameUtils';
 import { detectSceneChange } from '../../services/ffmpegService';
 import './Timeline.css';
 
@@ -63,6 +64,8 @@ export const Timeline: React.FC = () => {
 
     const moveCutPoint = useProjectStore(s => s.moveCutPoint);
     const removeCutPoint = useProjectStore(s => s.removeCutPoint);
+    const pushUndoSnapshot = useProjectStore(s => s.pushUndoSnapshot);
+    const fps = useVideoStore(s => s.fps);
 
     const [hoverCutPointIndex, setHoverCutPointIndex] = useState<number | null>(null);
     const [selectedCutPointIndex, setSelectedCutPointIndex] = useState<number | null>(null);
@@ -516,8 +519,9 @@ export const Timeline: React.FC = () => {
             const clickedIdx = existingCutPoints.findIndex(cp => Math.abs(cp - time) <= timeThreshold);
 
             if (clickedIdx !== -1) {
-                // Dragging a Cut Point
+                // Dragging a Cut Point — save undo snapshot NOW (once per drag, not per-move)
                 draggingCutPointIndexRef.current = clickedIdx;
+                pushUndoSnapshot();
                 setSelectedCutPointIndex(clickedIdx);
                 setSelectedSegmentId(null);
             } else {
@@ -546,7 +550,9 @@ export const Timeline: React.FC = () => {
             // A. Dragging a cut point
             if (draggingCutPointIndexRef.current !== null) {
                 const otherPoints = [currentTimeRef.current, ...pts.filter((_, i) => i !== draggingCutPointIndexRef.current)];
-                const snapped = calculateSnap(t, otherPoints, pixelsPerSecondRef.current);
+                let snapped = calculateSnap(t, otherPoints, pixelsPerSecondRef.current);
+                // Also snap to frame grid
+                snapped = snapToFrame(snapped, fps);
                 moveCutPoint(draggingCutPointIndexRef.current, Math.max(0.1, Math.min(durationRef.current, snapped)));
                 return;
             }
@@ -564,7 +570,9 @@ export const Timeline: React.FC = () => {
                 }
 
                 const snapped = calculateSnap(t, pts, pixelsPerSecondRef.current);
-                seekTo(Math.max(0, Math.min(durationRef.current, snapped)));
+                // Snap playhead to frame grid
+                const frameSnapped = snapToFrame(snapped, fps);
+                seekTo(Math.max(0, Math.min(durationRef.current, frameSnapped)));
             }
         };
 

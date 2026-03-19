@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import type { Project, Segment, TextBlock, TextBlockType, Asset, AssetCategory, AssetFile } from '../types';
 import { invoke } from '@tauri-apps/api/core';
+import { snapToFrame } from '../utils/frameUtils';
+import { useVideoStore } from './videoStore';
 
 interface ProjectState {
     workspace: string | null;
@@ -23,6 +25,7 @@ interface ProjectState {
     moveCutPoint: (cutPointIndex: number, newTime: number) => void;
     updateSegment: (id: string, updates: Partial<Segment>) => void;
     undoSegments: () => void;
+    pushUndoSnapshot: () => void;
 
     // TextBlock operations
     addTextBlock: (blockType: TextBlockType, title: string) => void;
@@ -121,11 +124,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         const { project } = get();
         if (!project) return;
 
+        // Snap to frame grid using video fps from videoStore
+        const fps = useVideoStore.getState().fps;
+        const snappedTime = snapToFrame(time, fps);
+
         const existingCutPoints = extractCutPoints(project.segments);
         // Don't add duplicate cut points (within 0.1s tolerance)
-        if (existingCutPoints.some(cp => Math.abs(cp - time) < 0.1)) return;
+        if (existingCutPoints.some(cp => Math.abs(cp - snappedTime) < 0.1)) return;
 
-        const newCutPoints = [...existingCutPoints, time];
+        const newCutPoints = [...existingCutPoints, snappedTime];
         const videoDuration = project.segments.length > 0
             ? project.segments[project.segments.length - 1].endTime
             : time + 1; // fallback
@@ -217,8 +224,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         set({
             project: { ...project, segments: newSegments, updatedAt: new Date().toISOString() },
             isDirty: true,
-            undoStack: [...get().undoStack, oldSegments], // save history
+            // Note: undo for drag is managed by Timeline (pushUndoSnapshot at drag-start, not per-move)
         });
+    },
+
+    // Explicit undo snapshot — called by Timeline at drag-start so undo reverts the entire drag
+    pushUndoSnapshot: () => {
+        const { project, undoStack } = get();
+        if (!project) return;
+        set({ undoStack: [...undoStack, project.segments].slice(-50) });
     },
 
     updateSegment: (id, updates) => {

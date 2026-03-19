@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { snapToFrame, stepToFrame } from '../utils/frameUtils';
 
 interface VideoState {
     videoRef: HTMLVideoElement | null;
@@ -71,17 +72,19 @@ export const useVideoStore = create<VideoState>((set, get) => ({
     },
 
     seekTo: (time) => {
-        const { videoRef } = get();
+        const { videoRef, fps } = get();
         if (!videoRef) return;
-        videoRef.currentTime = time;
-        set({ currentTime: time });
+        const snapped = snapToFrame(time, fps);
+        videoRef.currentTime = snapped;
+        set({ currentTime: snapped });
     },
 
     stepFrame: (direction) => {
-        const { videoRef, fps } = get();
+        const { videoRef, fps, duration } = get();
         if (!videoRef) return;
-        const frameDuration = 1 / fps;
-        videoRef.currentTime = Math.max(0, videoRef.currentTime + direction * frameDuration);
+        const newTime = Math.min(duration, stepToFrame(videoRef.currentTime, fps, direction));
+        videoRef.currentTime = newTime;
+        set({ currentTime: newTime });
     },
 
     skipSeconds: (seconds) => {
