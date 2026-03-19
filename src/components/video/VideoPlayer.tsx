@@ -3,6 +3,7 @@ import { useVideoStore } from '../../stores/videoStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useTimelineStore } from '../../stores/timelineStore';
 import { formatTime } from '../../utils/timeFormat';
+import { snapToFrame } from '../../utils/frameUtils';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
@@ -209,8 +210,13 @@ export const VideoPlayer: React.FC = () => {
             if (existingProject && existingProject.segments.length > 0) {
                 // Preserve existing segments/textBlocks, just update the video path
                 existingProject.videoFilePath = videoPath;
+                // Snap existing segment boundaries to frame grid now that we know the real fps
+                existingProject.segments.forEach(seg => {
+                    seg.startTime = snapToFrame(seg.startTime, info.fps);
+                    seg.endTime = snapToFrame(seg.endTime, info.fps);
+                });
                 useProjectStore.getState().setProject({ ...existingProject });
-                console.log('[VideoPlayer] Existing project found with', existingProject.segments.length, 'segments — preserved');
+                console.log('[VideoPlayer] Existing project found with', existingProject.segments.length, 'segments — preserved & frame-snapped');
             } else {
                 // No existing data — create a fresh project with one full-duration segment
                 createNewProject(videoPath);

@@ -482,7 +482,27 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
                     }
                 }
 
-                set({ workspace, project, rootProject: null, activeAssetId: null, isDirty: false, isLoading: false, undoStack: [] });
+                // Snap all segment boundaries to frame grid (migrates historical data from other platforms)
+                // Only snap if we have a video loaded (so fps is real, not the default 24)
+                const videoFps = useVideoStore.getState().fps;
+                const hasVideo = !!project.proxyFilePath || !!project.videoFilePath;
+                let segmentsModified = false;
+                if (hasVideo && videoFps > 0) {
+                    project.segments.forEach(seg => {
+                        const snappedStart = snapToFrame(seg.startTime, videoFps);
+                        const snappedEnd = snapToFrame(seg.endTime, videoFps);
+                        if (snappedStart !== seg.startTime || snappedEnd !== seg.endTime) {
+                            seg.startTime = snappedStart;
+                            seg.endTime = snappedEnd;
+                            segmentsModified = true;
+                        }
+                    });
+                    if (segmentsModified) {
+                        console.log('[loadProject] Snapped segment boundaries to frame grid (fps:', videoFps, ')');
+                    }
+                }
+
+                set({ workspace, project, rootProject: null, activeAssetId: null, isDirty: segmentsModified, isLoading: false, undoStack: [] });
                 return true;
             }
             set({ workspace, rootProject: null, activeAssetId: null, isLoading: false, undoStack: [] });
