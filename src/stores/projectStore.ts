@@ -571,13 +571,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         if (!targetAsset || targetAsset.category !== 'segment_analysis') return;
 
         if (targetAsset.subProjectData) {
-            // Already has nested data, just swap the pointers
+            // Reset video state so VideoPlayer reloads with the sub-project's clip
+            useVideoStore.getState().reset();
+
+            // Swap project pointer to the sub-project
             set({
                 rootProject: project,
                 project: targetAsset.subProjectData,
                 activeAssetId: assetId,
                 undoStack: [],
-                isDirty: false // isDirty reflects whether the current view has unsaved changes
+                isDirty: false
             });
         }
     },
@@ -592,12 +595,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             a.id === activeAssetId ? { ...a, subProjectData: project } : a
         );
 
+        // Reset video state so VideoPlayer reloads the root project's video
+        useVideoStore.getState().reset();
+
         set({
             rootProject: null,
             project: updatedRoot,
             activeAssetId: null,
             undoStack: [],
-            // If the sub-project was dirty, we inherit that dirtiness so the user knows to save
             isDirty: isDirty || get().isDirty 
         });
     }
