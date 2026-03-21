@@ -6,7 +6,12 @@ import { formatTime } from '../../utils/timeFormat';
 import { SEGMENT_CATEGORIES } from '../../types';
 import './SegmentList.css';
 
-/** Auto-expanding textarea: grows with content, min 2 rows */
+/** Auto-expanding textarea with custom resize handle.
+ *  - Auto-expands to fit content on typing
+ *  - Custom drag handle at bottom: clear ns-resize cursor
+ *  - Manual drag "locks" the height (scrollbar appears)
+ *  - Next keystroke unlocks and re-enables auto-expand
+ */
 const AutoTextarea: React.FC<{
     className?: string;
     placeholder?: string;
@@ -16,27 +21,64 @@ const AutoTextarea: React.FC<{
     minRows?: number;
 }> = ({ className, placeholder, value, onChange, onClick, minRows = 2 }) => {
     const ref = useRef<HTMLTextAreaElement>(null);
+    const manuallyResized = useRef(false);
 
-    const resize = useCallback(() => {
+    const autoResize = useCallback(() => {
         const el = ref.current;
         if (!el) return;
+        el.style.overflow = 'hidden';
         el.style.height = 'auto';
         el.style.height = `${el.scrollHeight}px`;
     }, []);
 
-    useEffect(() => { resize(); }, [value, resize]);
+    useEffect(() => {
+        if (!manuallyResized.current) autoResize();
+    }, [value, autoResize]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        manuallyResized.current = false;
+        onChange(e);
+        autoResize();
+    };
+
+    // Custom drag handle: programmatic resize
+    const handleDragStart = (e: React.MouseEvent) => {
+        e.preventDefault();
+        const el = ref.current;
+        if (!el) return;
+        const startY = e.clientY;
+        const startH = el.offsetHeight;
+
+        const onMove = (ev: MouseEvent) => {
+            const newH = Math.max(32, startH + (ev.clientY - startY));
+            el.style.height = `${newH}px`;
+            el.style.overflow = 'auto';
+            manuallyResized.current = true;
+        };
+        const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    };
 
     return (
-        <textarea
-            ref={ref}
-            className={className}
-            placeholder={placeholder}
-            value={value}
-            onChange={(e) => { onChange(e); resize(); }}
-            onClick={onClick}
-            rows={minRows}
-            style={{ overflow: 'hidden', resize: 'none' }}
-        />
+        <div className="auto-textarea-wrapper">
+            <textarea
+                ref={ref}
+                className={className}
+                placeholder={placeholder}
+                value={value}
+                onChange={handleChange}
+                onClick={onClick}
+                rows={minRows}
+                style={{ resize: 'none' }}
+            />
+            <div className="resize-handle" onMouseDown={handleDragStart}>
+                <span className="resize-dots">⋯</span>
+            </div>
+        </div>
     );
 };
 
