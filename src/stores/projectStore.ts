@@ -148,6 +148,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             if (oldSeg) {
                 newSeg.description = oldSeg.description;
                 newSeg.category = oldSeg.category;
+                newSeg.notes = oldSeg.notes;
                 newSeg.id = oldSeg.id;
             }
         });
@@ -179,6 +180,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             if (oldSeg) {
                 newSeg.description = oldSeg.description;
                 newSeg.category = oldSeg.category;
+                newSeg.notes = oldSeg.notes;
                 newSeg.id = oldSeg.id;
             }
         });

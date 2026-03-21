@@ -1,10 +1,44 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { useVideoStore } from '../../stores/videoStore';
 import { useTimelineStore } from '../../stores/timelineStore';
 import { formatTime } from '../../utils/timeFormat';
 import { SEGMENT_CATEGORIES } from '../../types';
 import './SegmentList.css';
+
+/** Auto-expanding textarea: grows with content, min 2 rows */
+const AutoTextarea: React.FC<{
+    className?: string;
+    placeholder?: string;
+    value: string;
+    onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+    onClick?: (e: React.MouseEvent) => void;
+    minRows?: number;
+}> = ({ className, placeholder, value, onChange, onClick, minRows = 2 }) => {
+    const ref = useRef<HTMLTextAreaElement>(null);
+
+    const resize = useCallback(() => {
+        const el = ref.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = `${el.scrollHeight}px`;
+    }, []);
+
+    useEffect(() => { resize(); }, [value, resize]);
+
+    return (
+        <textarea
+            ref={ref}
+            className={className}
+            placeholder={placeholder}
+            value={value}
+            onChange={(e) => { onChange(e); resize(); }}
+            onClick={onClick}
+            rows={minRows}
+            style={{ overflow: 'hidden', resize: 'none' }}
+        />
+    );
+};
 
 export const SegmentList: React.FC = () => {
     const project = useProjectStore(s => s.project);
@@ -67,13 +101,20 @@ export const SegmentList: React.FC = () => {
                         </div>
 
                         <div className="segment-card-body">
-                            <textarea
+                            <AutoTextarea
                                 className="segment-description"
                                 placeholder="添加描述..."
                                 value={seg.description}
                                 onChange={(e) => updateSegment(seg.id, { description: e.target.value })}
                                 onClick={(e) => e.stopPropagation()}
-                                rows={2}
+                            />
+                            <AutoTextarea
+                                className="segment-notes"
+                                placeholder="备注..."
+                                value={seg.notes || ''}
+                                onChange={(e) => updateSegment(seg.id, { notes: e.target.value })}
+                                onClick={(e) => e.stopPropagation()}
+                                minRows={1}
                             />
                             <div className="segment-category-row">
                                 <select

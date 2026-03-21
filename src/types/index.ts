@@ -7,6 +7,7 @@ export interface Segment {
   endTime: number;   // seconds
   description: string;
   category: string;
+  notes?: string;
   isCutError?: boolean;
 }
 

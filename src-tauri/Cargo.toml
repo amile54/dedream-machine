@@ -1,6 +1,6 @@
 [package]
 name = "dedream-machine"
-version = "0.1.0"
+version = "0.2.0"
 description = "拆梦机器 — A film analysis workstation"
 authors = ["you"]
 edition = "2021"
