@@ -7,10 +7,10 @@ import { snapToFrame } from '../../utils/frameUtils';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
-import { quickProbe, backgroundTranscode, takeScreenshot, getSubtitleTracks, extractSubtitleTrack } from '../../services/ffmpegService';
+import { quickProbe, backgroundTranscode, takeScreenshot, getSubtitleTracks } from '../../services/ffmpegService';
 import type { SubtitleTrackInfo } from '../../services/ffmpegService';
-import { parseSrt } from '../../services/subtitleParser';
 import { AssetSelectModal } from '../assets/AssetSelectModal';
+import { SubtitleMenu } from './SubtitleMenu';
 import type { Asset, SubtitleCue } from '../../types';
 import './VideoPlayer.css';
 
@@ -68,6 +68,7 @@ export const VideoPlayer: React.FC = () => {
     const [showSubtitleMenu, setShowSubtitleMenu] = useState(false);
     const [embeddedTracks, setEmbeddedTracks] = useState<SubtitleTrackInfo[]>([]);
     const [loadingTrack, setLoadingTrack] = useState(false);
+    const ccBtnRef = useRef<HTMLButtonElement>(null);
 
     const showToast = (msg: string) => {
         setToastMessage(msg);
@@ -210,28 +211,34 @@ export const VideoPlayer: React.FC = () => {
             // and just update the video path. Only create a blank project if none exists.
             const existingProject = useProjectStore.getState().project;
             if (existingProject && existingProject.segments.length > 0) {
-                // Preserve existing segments/textBlocks, just update the video path
-                existingProject.videoFilePath = videoPath;
-                // Snap existing segment boundaries to frame grid now that we know the real fps
-                existingProject.segments.forEach(seg => {
-                    seg.startTime = snapToFrame(seg.startTime, info.fps);
-                    seg.endTime = snapToFrame(seg.endTime, info.fps);
+                // Preserve existing segments/textBlocks, just update the video path (immutably)
+                const snappedSegments = existingProject.segments.map(seg => ({
+                    ...seg,
+                    startTime: snapToFrame(seg.startTime, info.fps),
+                    endTime: snapToFrame(seg.endTime, info.fps),
+                }));
+                useProjectStore.getState().setProject({
+                    ...existingProject,
+                    videoFilePath: videoPath,
+                    segments: snappedSegments,
                 });
-                useProjectStore.getState().setProject({ ...existingProject });
-                console.log('[VideoPlayer] Existing project found with', existingProject.segments.length, 'segments — preserved & frame-snapped');
+                console.log('[VideoPlayer] Existing project found with', snappedSegments.length, 'segments — preserved & frame-snapped');
             } else {
                 // No existing data — create a fresh project with one full-duration segment
                 createNewProject(videoPath);
-                const store = useProjectStore.getState();
-                if (store.project) {
-                    store.project.segments = [{
-                        id: crypto.randomUUID(),
-                        index: 1,
-                        startTime: 0,
-                        endTime: info.duration,
-                        description: '',
-                        category: '',
-                    }];
+                const currentProject = useProjectStore.getState().project;
+                if (currentProject) {
+                    useProjectStore.getState().setProject({
+                        ...currentProject,
+                        segments: [{
+                            id: crypto.randomUUID(),
+                            index: 1,
+                            startTime: 0,
+                            endTime: info.duration,
+                            description: '',
+                            category: '',
+                        }],
+                    });
                 }
             }
             setOriginalVideoPath(videoPath);
@@ -686,118 +693,32 @@ export const VideoPlayer: React.FC = () => {
                     </button>
                     <button
                         className="ctrl-btn"
-                        ref={(el) => { (window as any).__ccBtnRef = el; }}
+                        ref={ccBtnRef}
                         onClick={() => setShowSubtitleMenu(!showSubtitleMenu)}
                         title="字幕"
                         style={{ position: 'relative', color: showSubtitles ? '#66aaff' : undefined }}
                     >
                         CC
                     </button>
-                    {showSubtitleMenu && (() => {
-                        const btnEl = (window as any).__ccBtnRef as HTMLElement | null;
-                        const btnRect = btnEl?.getBoundingClientRect();
-                        return (
-                            <>
-                                {/* Click-outside backdrop */}
-                                <div
-                                    style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
-                                    onClick={() => setShowSubtitleMenu(false)}
-                                />
-                                <div style={{
-                                    position: 'fixed',
-                                    top: '48px',
-                                    bottom: btnRect ? (window.innerHeight - btnRect.top + 6) : 60,
-                                    right: btnRect ? (window.innerWidth - btnRect.right) : 16,
-                                    background: '#1a1a2e',
-                                    border: '1px solid rgba(255,255,255,0.15)',
-                                    borderRadius: '8px',
-                                    padding: '4px',
-                                    minWidth: '200px',
-                                    maxWidth: '320px',
-                                    height: 'fit-content',
-                                    maxHeight: `calc(100vh - ${btnRect ? (window.innerHeight - btnRect.top + 6) : 60}px - 48px)`,
-                                    overflowY: 'auto',
-                                    zIndex: 9999,
-                                    boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
-                                }}>
-                                    <div style={{ padding: '6px 10px', fontSize: '0.72rem', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>外挂字幕</div>
-                                    <button
-                                        style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#ccc', padding: '8px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.82rem' }}
-                                        onClick={async () => {
-                                            setShowSubtitleMenu(false);
-                                            const file = await open({
-                                                filters: [{ name: '字幕文件', extensions: ['srt'] }],
-                                                title: '选择字幕文件',
-                                            });
-                                            if (file) {
-                                                try {
-                                                    const { readTextFile } = await import('@tauri-apps/plugin-fs');
-                                                    const content = await readTextFile(file as string);
-                                                    const cues = parseSrt(content);
-                                                    setSubtitleCues(cues);
-                                                    setShowSubtitles(true);
-                                                    setSubtitleFilePath(file as string);
-                                                    showToast(`已加载 ${cues.length} 条字幕`);
-                                                } catch (err) {
-                                                    showToast(`字幕加载失败: ${err}`);
-                                                }
-                                            }
-                                        }}
-                                    >
-                                        📄 加载 .srt 文件…
-                                    </button>
-
-                                    {embeddedTracks.length > 0 && (
-                                        <>
-                                            <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '4px 0' }} />
-                                            <div style={{ padding: '6px 10px', fontSize: '0.72rem', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>内嵌字幕轨 ({embeddedTracks.length})</div>
-                                            {embeddedTracks.map((track) => (
-                                                <button
-                                                    key={track.index}
-                                                    style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#ccc', padding: '8px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                                                    disabled={loadingTrack}
-                                                    onClick={async () => {
-                                                        if (!project?.videoFilePath) return;
-                                                        setLoadingTrack(true);
-                                                        setShowSubtitleMenu(false);
-                                                        showToast(`正在提取字幕: ${track.title}...`);
-                                                        try {
-                                                            const srtContent = await extractSubtitleTrack(project.videoFilePath, track.index);
-                                                            const cues = parseSrt(srtContent);
-                                                            setSubtitleCues(cues);
-                                                            setShowSubtitles(true);
-                                                            showToast(`已加载 ${cues.length} 条字幕 (${track.title})`);
-                                                        } catch (err) {
-                                                            showToast(`字幕提取失败: ${err}`);
-                                                        } finally {
-                                                            setLoadingTrack(false);
-                                                        }
-                                                    }}
-                                                >
-                                                    📝 {track.title}{track.language ? ` [${track.language}]` : ''}
-                                                </button>
-                                            ))}
-                                        </>
-                                    )}
-
-                                    {subtitleCues.length > 0 && (
-                                        <>
-                                            <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '4px 0' }} />
-                                            <button
-                                                style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: showSubtitles ? '#66aaff' : '#ccc', padding: '8px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.82rem' }}
-                                                onClick={() => {
-                                                    setShowSubtitles(!showSubtitles);
-                                                    setShowSubtitleMenu(false);
-                                                }}
-                                            >
-                                                {showSubtitles ? '✅ 隐藏字幕' : '显示字幕'}
-                                            </button>
-                                        </>
-                                    )}
-                                </div>
-                            </>
-                        );
-                    })()}
+                    {showSubtitleMenu && (
+                        <SubtitleMenu
+                            embeddedTracks={embeddedTracks}
+                            subtitleCues={subtitleCues}
+                            showSubtitles={showSubtitles}
+                            loadingTrack={loadingTrack}
+                            videoFilePath={project?.videoFilePath}
+                            onClose={() => setShowSubtitleMenu(false)}
+                            onCuesLoaded={(cues) => {
+                                setSubtitleCues(cues);
+                                setShowSubtitles(true);
+                            }}
+                            onToggleSubtitles={() => setShowSubtitles(!showSubtitles)}
+                            onSubtitleFileLoaded={(path) => setSubtitleFilePath(path)}
+                            onLoadingChange={setLoadingTrack}
+                            showToast={showToast}
+                            anchorRef={ccBtnRef}
+                        />
+                    )}
                     <div className="volume-control">
                         <span className="volume-icon">🔊</span>
                         <input

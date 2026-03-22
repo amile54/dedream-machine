@@ -11,8 +11,6 @@ export function useKeyboardShortcuts() {
     const togglePlay = useVideoStore(s => s.togglePlay);
     const stepFrame = useVideoStore(s => s.stepFrame);
     const skipSeconds = useVideoStore(s => s.skipSeconds);
-    const currentTime = useVideoStore(s => s.currentTime);
-    const duration = useVideoStore(s => s.duration);
     const addCutPoint = useProjectStore(s => s.addCutPoint);
     const saveProject = useProjectStore(s => s.saveProject);
     const undoSegments = useProjectStore(s => s.undoSegments);
@@ -60,8 +58,9 @@ export function useKeyboardShortcuts() {
             case 'B':
                 if (!isCmd) {
                     e.preventDefault();
-                    // Only allow cuts when there's an active playable video
-                    const hasVideo = useVideoStore.getState().proxyUrl !== null;
+                    // Read fresh values inside handler to avoid stale closure
+                    const { currentTime, duration, proxyUrl } = useVideoStore.getState();
+                    const hasVideo = proxyUrl !== null;
                     if (duration > 0 && hasVideo) {
                         addCutPoint(currentTime);
                     }
@@ -81,7 +80,7 @@ export function useKeyboardShortcuts() {
                 }
                 break;
         }
-    }, [togglePlay, stepFrame, skipSeconds, currentTime, duration, addCutPoint, saveProject, undoSegments]);
+    }, [togglePlay, stepFrame, skipSeconds, addCutPoint, saveProject, undoSegments]);
 
     useEffect(() => {
         window.addEventListener('keydown', handleKeyDown);

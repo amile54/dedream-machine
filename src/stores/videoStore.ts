@@ -7,6 +7,7 @@ interface VideoState {
     currentTime: number;
     duration: number;
     fps: number;
+    fpsConfirmed: boolean;
     volume: number;
     proxyUrl: string | null;
     originalVideoPath: string | null;
@@ -41,6 +42,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
     currentTime: 0,
     duration: 0,
     fps: 24,
+    fpsConfirmed: false,
     volume: 1,
     proxyUrl: null,
     originalVideoPath: null,
@@ -52,7 +54,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
     setPlaying: (playing) => set({ isPlaying: playing }),
     setCurrentTime: (time) => set({ currentTime: time }),
     setDuration: (duration) => set({ duration }),
-    setFps: (fps) => set({ fps }),
+    setFps: (fps) => set({ fps, fpsConfirmed: true }),
     setVolume: (volume) => {
         const { videoRef } = get();
         if (videoRef) videoRef.volume = volume;
@@ -115,6 +117,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
             currentTime: 0,
             duration: 0,
             fps: 24,
+            fpsConfirmed: false,
             proxyUrl: null,
             originalVideoPath: null,
             isTranscoding: false,

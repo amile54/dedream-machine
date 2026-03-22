@@ -219,6 +219,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             if (oldSegments[i]) {
                 newSeg.description = oldSegments[i].description;
                 newSeg.category = oldSegments[i].category;
+                newSeg.notes = oldSegments[i].notes;
                 newSeg.id = oldSegments[i].id; // Keep same UUID to avoid React re-mounts
             }
         });
@@ -485,19 +486,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
                 }
 
                 // Snap all segment boundaries to frame grid (migrates historical data from other platforms)
-                // Only snap if we have a video loaded (so fps is real, not the default 24)
-                const videoFps = useVideoStore.getState().fps;
-                const hasVideo = !!project.proxyFilePath || !!project.videoFilePath;
+                // Only snap if we have confirmed the real fps from FFprobe (not the default 24)
+                const videoState = useVideoStore.getState();
+                const videoFps = videoState.fps;
+                const fpsIsReal = videoState.fpsConfirmed;
                 let segmentsModified = false;
-                if (hasVideo && videoFps > 0) {
-                    project.segments.forEach(seg => {
+                if (fpsIsReal && videoFps > 0) {
+                    project.segments = project.segments.map(seg => {
                         const snappedStart = snapToFrame(seg.startTime, videoFps);
                         const snappedEnd = snapToFrame(seg.endTime, videoFps);
                         if (snappedStart !== seg.startTime || snappedEnd !== seg.endTime) {
-                            seg.startTime = snappedStart;
-                            seg.endTime = snappedEnd;
                             segmentsModified = true;
+                            return { ...seg, startTime: snappedStart, endTime: snappedEnd };
                         }
+                        return seg;
                     });
                     if (segmentsModified) {
                         console.log('[loadProject] Snapped segment boundaries to frame grid (fps:', videoFps, ')');

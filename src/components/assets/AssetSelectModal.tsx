@@ -71,21 +71,16 @@ export const AssetSelectModal: React.FC<AssetSelectModalProps> = ({
     const handleConfirm = () => {
         if (isCreatingNew) {
             if (!newAssetName.trim()) return;
-            // Create new asset via action but we need the actual asset object
-            // to pass to onConfirm. Zustand doesn't return the created object directly,
-            // so we generate an ID here or just use the store after creation.
-            // A simpler way: just trigger addAsset, then find it.
             addAsset(selectedCategory, newAssetName.trim());
 
-            // Re-fetch from store to get the new asset
-            // ... wait for newly created...
-            setTimeout(() => {
-                const latestAssets = useProjectStore.getState().project?.assets || [];
-                const newlyCreated = latestAssets[latestAssets.length - 1]; // highly likely
-                if (newlyCreated && newlyCreated.name === newAssetName.trim()) {
-                    onConfirm(newlyCreated, { isAudio, customFilename: customFilename.trim() || undefined });
-                }
-            }, 50);
+            // Zustand's set() is synchronous, so the new asset is available immediately
+            const latestAssets = useProjectStore.getState().project?.assets || [];
+            const newlyCreated = latestAssets.find(
+                a => a.name === newAssetName.trim() && a.category === selectedCategory
+            );
+            if (newlyCreated) {
+                onConfirm(newlyCreated, { isAudio, customFilename: customFilename.trim() || undefined });
+            }
         } else {
             const asset = project.assets?.find(a => a.id === selectedAssetId);
             if (asset) {

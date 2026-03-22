@@ -277,3 +277,122 @@
     background: rgba(255, 80, 80, 0.15);
     opacity: 1;
 }
+
+/* Clickable screenshot file items */
+.asset-file-item--clickable {
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.asset-file-item--clickable:hover {
+    background: rgba(100, 100, 200, 0.15);
+}
+
+/* Lightbox overlay */
+.lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: lightbox-fade-in 0.2s ease-out;
+    cursor: pointer;
+}
+
+@keyframes lightbox-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.lightbox-close {
+    position: fixed;
+    top: 16px;
+    right: 20px;
+    z-index: 10001;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    font-size: 1.2rem;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.lightbox-close:hover {
+    background: rgba(255, 80, 80, 0.4);
+}
+
+.lightbox-content {
+    cursor: default;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    max-width: 90vw;
+    max-height: 90vh;
+    animation: lightbox-scale-in 0.2s ease-out;
+}
+
+@keyframes lightbox-scale-in {
+    from { transform: scale(0.92); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.lightbox-image {
+    max-width: 90vw;
+    max-height: 85vh;
+    object-fit: contain;
+    border-radius: 6px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+.lightbox-caption {
+    color: #aaa;
+    font-size: 0.8rem;
+    text-align: center;
+    padding: 4px 12px;
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 4px;
+}
+
+.lightbox-video {
+    max-width: 90vw;
+    max-height: 85vh;
+    border-radius: 6px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+    outline: none;
+}
+
+.lightbox-audio-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    padding: 40px;
+    background: rgba(30, 30, 50, 0.9);
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+.lightbox-audio-icon {
+    font-size: 4rem;
+    animation: lightbox-pulse 2s ease-in-out infinite;
+}
+
+@keyframes lightbox-pulse {
+    0%, 100% { transform: scale(1); opacity: 0.8; }
+    50% { transform: scale(1.1); opacity: 1; }
+}
+
+.lightbox-audio {
+    width: 360px;
+    max-width: 80vw;
+}

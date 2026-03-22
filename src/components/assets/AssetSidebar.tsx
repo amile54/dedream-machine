@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
+import { invoke } from '@tauri-apps/api/core';
 import { ASSET_CATEGORIES } from '../../types';
 import type { AssetCategory } from '../../types';
 import './AssetSidebar.css';
@@ -16,6 +17,9 @@ export const AssetSidebar: React.FC = () => {
     );
     const [expandedAssets, setExpandedAssets] = useState<Set<string>>(new Set());
     const [newAssetNames, setNewAssetNames] = useState<Partial<Record<AssetCategory, string>>>({});
+    const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+    const [lightboxName, setLightboxName] = useState<string>('');
+    const [lightboxType, setLightboxType] = useState<'screenshot' | 'clip' | 'audio'>('screenshot');
 
     if (!project) return null;
 
@@ -52,7 +56,22 @@ export const AssetSidebar: React.FC = () => {
         }
     };
 
-    return (
+    const handlePreviewFile = async (filePath: string, fileType: 'screenshot' | 'clip' | 'audio') => {
+        try {
+            const workspace = useProjectStore.getState().workspace;
+            if (!workspace) return;
+            const { join } = await import('@tauri-apps/api/path');
+            const absolutePath = await join(workspace, filePath);
+            const url = await invoke<string>('get_stream_url', { filePath: absolutePath });
+            setLightboxUrl(url);
+            setLightboxName(filePath.split('/').pop() || filePath);
+            setLightboxType(fileType);
+        } catch (err) {
+            console.error('Failed to preview file:', err);
+        }
+    };
+
+    const mainContent = (
         <div className="asset-sidebar">
             <div className="asset-sidebar-header">
                 <h3>资产管理</h3>
@@ -168,7 +187,9 @@ export const AssetSidebar: React.FC = () => {
                                                                         <h4>包含文件:</h4>
                                                                         <div className="asset-file-list-items">
                                                                             {asset.files.map((file, idx) => (
-                                                                                <div key={idx} className="asset-file-item" title={file.path}>
+                                                                                <div key={idx} className="asset-file-item asset-file-item--clickable" title={file.path}
+                                                                                    onClick={() => handlePreviewFile(file.path, file.type)}
+                                                                                >
                                                                                     <span className="file-type">
                                                                                         {file.type === 'screenshot' ? '🖼️' : file.type === 'audio' ? '🎵' : '🎬'}
                                                                                     </span>
@@ -204,5 +225,43 @@ export const AssetSidebar: React.FC = () => {
                 })}
             </div>
         </div>
+    );
+
+    return (
+        <>
+            {mainContent}
+
+            {/* Media Preview Lightbox */}
+            {lightboxUrl && (
+                <div className="lightbox-overlay" onClick={() => setLightboxUrl(null)}>
+                    <button className="lightbox-close" onClick={() => setLightboxUrl(null)}>✕</button>
+                    <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
+                        {lightboxType === 'screenshot' && (
+                            <img src={lightboxUrl!} alt={lightboxName} className="lightbox-image" />
+                        )}
+                        {lightboxType === 'clip' && (
+                            <video
+                                src={lightboxUrl!}
+                                controls
+                                autoPlay
+                                className="lightbox-video"
+                            />
+                        )}
+                        {lightboxType === 'audio' && (
+                            <div className="lightbox-audio-wrapper">
+                                <div className="lightbox-audio-icon">🎵</div>
+                                <audio
+                                    src={lightboxUrl!}
+                                    controls
+                                    autoPlay
+                                    className="lightbox-audio"
+                                />
+                            </div>
+                        )}
+                        <div className="lightbox-caption">{lightboxName}</div>
+                    </div>
+                </div>
+            )}
+        </>
     );
 };

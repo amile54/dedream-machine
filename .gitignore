@@ -27,3 +27,5 @@ src-tauri/bin/ffprobe-*
 *.njsproj
 *.sln
 *.sw?
+.gstack/
+.agents/

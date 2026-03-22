@@ -5,6 +5,7 @@ import { useTimelineStore } from '../../stores/timelineStore';
 import { formatTimeCompact } from '../../utils/timeFormat';
 import { snapToFrame } from '../../utils/frameUtils';
 import { detectSceneChange } from '../../services/ffmpegService';
+import { useThumbnailExtractor } from '../../hooks/useThumbnailExtractor';
 import './Timeline.css';
 
 function calculateSnap(time: number, snapPoints: number[], pps: number, thresholdPixels = 10): number {
@@ -29,25 +30,8 @@ export const Timeline: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const thumbVideoRef = useRef<HTMLVideoElement>(null); // For hover tooltip
-    const extractVideoRef = useRef<HTMLVideoElement>(null); // Dedicated for background extraction
-
-    // Thumbnail Cache system
-    const thumbnailCache = useRef<Map<number, ImageBitmap>>(new Map());
-    const extractionQueueRef = useRef<number[]>([]);
-    const isExtractingRef = useRef(false);
 
     const THUMB_WIDTH = 90;
-
-    function getThumbnailInterval(pps: number) {
-        const raw = THUMB_WIDTH / pps;
-        if (raw < 1) return 1;
-        if (raw < 2) return 2;
-        if (raw < 5) return 5;
-        if (raw < 10) return 10;
-        if (raw < 30) return 30;
-        if (raw < 60) return 60;
-        return Math.ceil(raw / 60) * 60;
-    }
 
     const duration = useVideoStore(s => s.duration);
     const currentTime = useVideoStore(s => s.currentTime);
@@ -399,90 +383,15 @@ export const Timeline: React.FC = () => {
         draw();
     }, [draw]);
 
-    // --- Async Background Thumbnail Extractor ---
-    // Clear thumbnail cache when transcoding completes (proxy video changed)
-    useEffect(() => {
-        if (!isTranscoding && thumbnailCache.current.size > 0) {
-            // Transcoding just finished — clear stale thumbnails from old source
-            thumbnailCache.current.forEach(bmp => bmp.close());
-            thumbnailCache.current.clear();
-            if (drawRef.current) drawRef.current();
-        }
-    }, [isTranscoding]);
+    // Thumbnail extraction (extracted to custom hook)
+    const { thumbnailCache, extractionQueueRef, extractVideoRef, getThumbnailInterval } = useThumbnailExtractor({
+        proxyUrl,
+        isTranscoding,
+        thumbWidth: THUMB_WIDTH,
+        trackHeight: TRACK_HEIGHT,
+        drawRef,
+    });
 
-    useEffect(() => {
-        if (!proxyUrl || !extractVideoRef.current || isTranscoding) return;
-
-        let active = true;
-
-        const processQueue = async () => {
-            if (!active || isExtractingRef.current || extractionQueueRef.current.length === 0) return;
-            
-            isExtractingRef.current = true;
-            
-            try {
-                const targetTime = extractionQueueRef.current.pop(); // LIFO prioritizes most recently rendered (visible)
-                if (targetTime === undefined) {
-                    isExtractingRef.current = false;
-                    return;
-                }
-
-                if (thumbnailCache.current.has(targetTime)) {
-                    isExtractingRef.current = false;
-                    if (active && extractionQueueRef.current.length > 0) requestAnimationFrame(processQueue);
-                    return;
-                }
-
-                const video = extractVideoRef.current;
-                if (!video) {
-                    isExtractingRef.current = false;
-                    return;
-                }
-                
-                await new Promise<void>((resolve) => {
-                    const onSeeked = () => { cleanup(); resolve(); };
-                    const onError = () => { cleanup(); resolve(); }; // Resolve anyway to unblock
-                    const cleanup = () => {
-                        video.removeEventListener('seeked', onSeeked);
-                        video.removeEventListener('error', onError);
-                    };
-                    video.addEventListener('seeked', onSeeked);
-                    video.addEventListener('error', onError);
-                    video.currentTime = targetTime;
-                });
-
-                if (!active) return;                const bmp = await createImageBitmap(video, { resizeWidth: THUMB_WIDTH, resizeHeight: TRACK_HEIGHT });
-                thumbnailCache.current.set(targetTime, bmp);
-                
-                // Triggers an event-driven redraw to place the new thumbnail immediately without 60fps polling
-                if (drawRef.current) drawRef.current();
-
-                // Throttle the loop slightly (10ms) to ensure React/UI thread isn't starved by IO
-                await new Promise(r => setTimeout(r, 10));
-
-            } catch (err) {
-                console.error("Failed to extract thumbnail", err);
-            }
-
-            isExtractingRef.current = false;
-            
-            if (active && extractionQueueRef.current.length > 0) {
-                // Ensure loop continues without freezing the thread
-                setTimeout(processQueue, 0);
-            }
-        };
-
-        const intervalId = setInterval(() => {
-            if (extractionQueueRef.current.length > 0 && !isExtractingRef.current) {
-                processQueue();
-            }
-        }, 80);
-
-        return () => {
-            active = false;
-            clearInterval(intervalId);
-        };
-    }, [proxyUrl, THUMB_WIDTH]);
 
     // --- Pointer event handlers using document-level listeners ---
     // NO setPointerCapture — the scrollbar remains fully independent
