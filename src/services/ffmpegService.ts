@@ -353,6 +353,10 @@ export async function exportClip(
     await ensureDirForFile(outputPath);
 
     const duration = endTime - startTime;
+    // Fix frame bleeding: ffmpeg's -t is inclusive of the exact end timestamp.
+    // By subtracting 0.01s (less than one physical frame even at 60fps), we ensure
+    // the frame exactly at `endTime` (which belongs to the NEXT segment) is dropped.
+    const safeDuration = Math.max(0.001, duration - 0.01);
 
     // Use -t (duration) instead of -to to avoid absolute-vs-relative confusion.
     // -ss before -i for fast seeking; -avoid_negative_ts fix timestamp alignment.
@@ -361,7 +365,7 @@ export async function exportClip(
         '-v', 'warning',
         '-ss', startTime.toString(),
         '-i', inputPath,
-        '-t', duration.toString(),
+        '-t', safeDuration.toString(),
         '-map', '0:v:0',    // first video stream
         '-map', '0:a:0?',   // first audio stream (optional — some clips may have no audio)
         '-c', 'copy',
@@ -375,7 +379,7 @@ export async function exportClip(
             '-v', 'warning',
             '-ss', startTime.toString(),
             '-i', inputPath,
-            '-t', duration.toString(),
+            '-t', safeDuration.toString(),
             '-map', '0:a:0',
             '-vn',
             '-b:a', '192k',

@@ -452,8 +452,9 @@ export const VideoPlayer: React.FC = () => {
                 // The original video might be MKV/HEVC which WebKit can't play after `-c copy`.
                 let clipSource = project.videoFilePath;
                 if (project.proxyFilePath) {
-                    // Resolve relative proxy path to absolute
-                    const proxyPath = project.proxyFilePath.startsWith('/')
+                    // Resolve relative proxy path to absolute, supporting both POSIX and Windows
+                    const isAbsolute = project.proxyFilePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(project.proxyFilePath);
+                    const proxyPath = isAbsolute
                         ? project.proxyFilePath
                         : await join(workspace, project.proxyFilePath);
                     clipSource = proxyPath;
