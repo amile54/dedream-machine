@@ -20,6 +20,14 @@ export interface SubtitleTrackInfo {
     title: string;       // e.g. '中文（简体）'
 }
 
+export interface AudioTrackInfo {
+    index: number;        // stream index in the container
+    codec: string;        // e.g. 'aac', 'ac3', 'dts'
+    language: string;     // e.g. 'chi', 'eng'
+    title: string;        // e.g. 'Surround 5.1'
+    channels: number;     // e.g. 2, 6
+}
+
 /**
  * Detect embedded subtitle tracks in a video file using FFprobe
  */
@@ -46,6 +54,36 @@ export async function getSubtitleTracks(videoPath: string): Promise<SubtitleTrac
             codec: s.codec_name || 'unknown',
             language: s.tags?.language || '',
             title: s.tags?.title || `Track ${s.index}`,
+        }));
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Detect audio tracks in a video file using FFprobe
+ */
+export async function getAudioTracks(videoPath: string): Promise<AudioTrackInfo[]> {
+    const cmd = Command.sidecar('bin/ffprobe', [
+        '-v', 'quiet',
+        '-print_format', 'json',
+        '-show_streams',
+        '-select_streams', 'a',
+        videoPath,
+    ]);
+
+    const output = await cmd.execute();
+    if (output.code !== 0) return [];
+
+    try {
+        const info = JSON.parse(output.stdout);
+        const streams = info.streams || [];
+        return streams.map((s: any, i: number) => ({
+            index: s.index,
+            codec: s.codec_name || 'unknown',
+            language: s.tags?.language || '',
+            title: s.tags?.title || `Audio ${i + 1}`,
+            channels: s.channels || 2,
         }));
     } catch {
         return [];
@@ -141,6 +179,7 @@ export async function backgroundTranscode(
     inputPath: string,
     workspacePath: string,
     onProgress?: (percent: number, status: string) => void,
+    audioStreamIndex?: number,
 ): Promise<string> {
     const info = await getVideoInfo(inputPath);
     const proxyPath = await join(workspacePath, 'proxy.mp4');
@@ -149,10 +188,14 @@ export async function backgroundTranscode(
     const strategy = `后台优化中 (${isHW ? '硬件加速' : '软件编码'})`;
 
     onProgress?.(5, strategy);
-    console.log('[backgroundTranscode] Starting proxy generation:', encoder);
+    console.log('[backgroundTranscode] Starting proxy generation:', encoder, 'audioStream:', audioStreamIndex);
 
     const buildArgs = (enc: string): string[] => {
         const a: string[] = ['-v', 'warning', '-y', '-i', inputPath];
+        // Explicit stream mapping when audio track is specified
+        if (audioStreamIndex != null) {
+            a.push('-map', '0:v:0', '-map', `0:${audioStreamIndex}`);
+        }
         if (enc === 'h264_videotoolbox') {
             a.push('-c:v', 'h264_videotoolbox', '-b:v', '4000k', '-vf', 'scale=-2:720');
         } else if (enc === 'h264_nvenc') {

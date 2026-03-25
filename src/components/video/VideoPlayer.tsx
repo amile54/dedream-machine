@@ -7,8 +7,8 @@ import { snapToFrame } from '../../utils/frameUtils';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
-import { quickProbe, backgroundTranscode, takeScreenshot, getSubtitleTracks } from '../../services/ffmpegService';
-import type { SubtitleTrackInfo } from '../../services/ffmpegService';
+import { quickProbe, backgroundTranscode, takeScreenshot, getSubtitleTracks, getAudioTracks } from '../../services/ffmpegService';
+import type { SubtitleTrackInfo, AudioTrackInfo } from '../../services/ffmpegService';
 import { AssetSelectModal } from '../assets/AssetSelectModal';
 import { SubtitleMenu } from './SubtitleMenu';
 import type { Asset, SubtitleCue } from '../../types';
@@ -70,6 +70,10 @@ export const VideoPlayer: React.FC = () => {
     const [loadingTrack, setLoadingTrack] = useState(false);
     const ccBtnRef = useRef<HTMLButtonElement>(null);
 
+    // Audio track state
+    const [audioTracks, setAudioTracks] = useState<AudioTrackInfo[]>([]);
+    const [selectedAudioIndex, setSelectedAudioIndex] = useState<number | null>(null);
+
     const showToast = (msg: string) => {
         setToastMessage(msg);
         setTimeout(() => setToastMessage(null), 3000);
@@ -100,19 +104,61 @@ export const VideoPlayer: React.FC = () => {
         }
     }, [project, proxyUrl, setProxyUrl, setOriginalVideoPath]);
 
-    // Probe for embedded subtitle tracks when video loads
+    // Probe for embedded subtitle & audio tracks when video loads
     useEffect(() => {
         if (project?.videoFilePath) {
             getSubtitleTracks(project.videoFilePath)
                 .then(tracks => {
                     setEmbeddedTracks(tracks);
-                    if (tracks.length > 0) {
-                        console.log('[VideoPlayer] Found embedded subtitle tracks:', tracks);
-                    }
+                    if (tracks.length > 0) console.log('[VideoPlayer] Found embedded subtitle tracks:', tracks);
                 })
                 .catch(err => console.warn('[VideoPlayer] Could not probe subtitles:', err));
+
+            getAudioTracks(project.videoFilePath)
+                .then(tracks => {
+                    setAudioTracks(tracks);
+                    if (tracks.length > 0) {
+                        setSelectedAudioIndex(tracks[0].index);
+                        console.log('[VideoPlayer] Found audio tracks:', tracks);
+                    }
+                })
+                .catch(err => console.warn('[VideoPlayer] Could not probe audio tracks:', err));
         }
     }, [project?.videoFilePath]);
+
+    // Handle audio track selection — re-transcode with chosen track
+    const handleSelectAudioTrack = useCallback(async (streamIndex: number) => {
+        if (!project?.videoFilePath || !workspace) return;
+        setSelectedAudioIndex(streamIndex);
+        const track = audioTracks.find(t => t.index === streamIndex);
+        showToast(`切换音轨: ${track?.title || 'Audio ' + streamIndex}，正在重新转码...`);
+        setIsTranscoding(true);
+        setTranscodingProgress(0);
+        try {
+            const proxyPath = await backgroundTranscode(
+                project.videoFilePath,
+                workspace,
+                (percent) => setTranscodingProgress(percent),
+                streamIndex,
+            );
+            const rememberedTime = currentTime;
+            const newUrl = await invoke<string>('get_stream_url', { filePath: proxyPath });
+            setProxyUrl(newUrl);
+            setProxyFilePath(proxyPath);
+            setVideoError(null);
+            const vid = videoRef.current;
+            if (vid) {
+                const onLoaded = () => { vid.currentTime = rememberedTime; vid.removeEventListener('loadedmetadata', onLoaded); };
+                vid.addEventListener('loadedmetadata', onLoaded);
+            }
+            showToast('音轨切换完成');
+        } catch (err) {
+            showToast(`音轨切换失败: ${err}`);
+        } finally {
+            setIsTranscoding(false);
+            setTranscodingProgress(0);
+        }
+    }, [project?.videoFilePath, workspace, audioTracks, currentTime, showToast]);
 
     const handleTimeUpdate = () => {
         if (!videoRef.current) return;
@@ -713,6 +759,8 @@ export const VideoPlayer: React.FC = () => {
                     {showSubtitleMenu && (
                         <SubtitleMenu
                             embeddedTracks={embeddedTracks}
+                            audioTracks={audioTracks}
+                            selectedAudioIndex={selectedAudioIndex}
                             subtitleCues={subtitleCues}
                             showSubtitles={showSubtitles}
                             loadingTrack={loadingTrack}
@@ -725,6 +773,7 @@ export const VideoPlayer: React.FC = () => {
                             onToggleSubtitles={() => setShowSubtitles(!showSubtitles)}
                             onSubtitleFileLoaded={(path) => setSubtitleFilePath(path)}
                             onLoadingChange={setLoadingTrack}
+                            onSelectAudioTrack={handleSelectAudioTrack}
                             showToast={showToast}
                             anchorRef={ccBtnRef}
                         />
