@@ -352,24 +352,25 @@ export async function exportClip(
 ): Promise<void> {
     await ensureDirForFile(outputPath);
 
+    // Exact clipping duration
     const duration = endTime - startTime;
-    // Fix frame bleeding: ffmpeg's -t is inclusive of the exact end timestamp.
-    // By subtracting 0.01s (less than one physical frame even at 60fps), we ensure
-    // the frame exactly at `endTime` (which belongs to the NEXT segment) is dropped.
-    const safeDuration = Math.max(0.001, duration - 0.01);
 
-    // Use -t (duration) instead of -to to avoid absolute-vs-relative confusion.
-    // -ss before -i for fast seeking; -avoid_negative_ts fix timestamp alignment.
-    // -map explicitly selects first video + first audio (optional) to prevent stream issues.
+    // We must re-encode (transcode) rather than use `-c copy` to guarantee frame-level accuracy.
+    // Stream copy (-c copy) operates on GOP keyframes, which causes clips to snap to the nearest keyframe 
+    // instead of the user's exact cut point, introducing multiple frames of bleeding.
+    // Using ultrafast libx264 with crf 18 ensures visually lossless quality and executes very quickly.
     let ffmpegArgs = [
         '-v', 'warning',
         '-ss', startTime.toString(),
         '-i', inputPath,
-        '-t', safeDuration.toString(),
+        '-t', duration.toString(),
         '-map', '0:v:0',    // first video stream
-        '-map', '0:a:0?',   // first audio stream (optional — some clips may have no audio)
-        '-c', 'copy',
-        '-avoid_negative_ts', 'make_zero',
+        '-map', '0:a:0?',   // first audio stream (optional)
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-crf', '18',
+        '-c:a', 'aac',
+        '-b:a', '192k',
         '-y',
         outputPath,
     ];
@@ -379,9 +380,10 @@ export async function exportClip(
             '-v', 'warning',
             '-ss', startTime.toString(),
             '-i', inputPath,
-            '-t', safeDuration.toString(),
+            '-t', duration.toString(),
             '-map', '0:a:0',
             '-vn',
+            '-c:a', 'aac',
             '-b:a', '192k',
             '-y',
             outputPath,

@@ -676,13 +676,30 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     },
 
     exitSubProject: () => {
-        const { project, rootProject, activeAssetId, isDirty } = get();
-        if (!rootProject || !activeAssetId || !project) return;
+        const { project, rootProject, activeAssetId, isDirty, workspace } = get();
+        if (!rootProject || !activeAssetId || !project || !workspace) return;
+
+        // Convert sub-project paths back to relative before saving
+        const subToSave = { ...project };
+        const toRelative = (p: string) => {
+            if (!p) return p;
+            const normalizedP = p.replace(/\\/g, '/');
+            const normalizedW = workspace.replace(/\\/g, '/');
+            if (normalizedP.startsWith(normalizedW)) {
+                let rel = normalizedP.slice(normalizedW.length);
+                return rel.replace(/^\//, '');
+            }
+            return p;
+        };
+        subToSave.videoFilePath = toRelative(subToSave.videoFilePath);
+        if (subToSave.proxyFilePath) {
+            subToSave.proxyFilePath = toRelative(subToSave.proxyFilePath);
+        }
 
         // Sync the modified sub-project back into the root project
         const updatedRoot = { ...rootProject };
         updatedRoot.assets = updatedRoot.assets.map(a => 
-            a.id === activeAssetId ? { ...a, subProjectData: project } : a
+            a.id === activeAssetId ? { ...a, subProjectData: subToSave } : a
         );
 
         // Reset video state so VideoPlayer reloads the root project's video
