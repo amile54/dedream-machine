@@ -568,8 +568,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     },
 
     enterSubProject: (assetId: string) => {
-        const { project, rootProject } = get();
-        if (!project || rootProject) return; // Prevent double nesting for now
+        const { project, rootProject, workspace } = get();
+        if (!project || rootProject || !workspace) return; // Prevent double nesting
 
         const targetAsset = project.assets.find(a => a.id === assetId);
         if (!targetAsset || targetAsset.category !== 'segment_analysis') return;
@@ -578,10 +578,22 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             // Reset video state so VideoPlayer reloads with the sub-project's clip
             useVideoStore.getState().reset();
 
+            // Resolve relative paths → absolute using current workspace
+            const sub = { ...targetAsset.subProjectData };
+            const resolve = (p: string) => {
+                if (!p) return p;
+                // Already absolute? keep as-is (legacy data)
+                if (p.startsWith('/') || p.startsWith('\\')) return p;
+                // Relative → join with workspace
+                return `${workspace}/${p}`;
+            };
+            sub.videoFilePath = resolve(sub.videoFilePath);
+            if (sub.proxyFilePath) sub.proxyFilePath = resolve(sub.proxyFilePath);
+
             // Swap project pointer to the sub-project
             set({
                 rootProject: project,
-                project: targetAsset.subProjectData,
+                project: sub,
                 activeAssetId: assetId,
                 undoStack: [],
                 isDirty: false

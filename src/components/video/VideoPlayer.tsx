@@ -396,8 +396,8 @@ export const VideoPlayer: React.FC = () => {
                 if (asset.category === 'segment_analysis' && !isAudio) {
                     const now = new Date().toISOString();
                     const subProject = {
-                        videoFilePath: outputPath,
-                        proxyFilePath: outputPath, // The exported clip is already a web-compatible mp4
+                        videoFilePath: relativePath,   // relative to workspace — portable across machines
+                        proxyFilePath: relativePath,   // the exported clip is already web-compatible mp4
                         segments: [{
                             id: crypto.randomUUID(),
                             index: 1,
