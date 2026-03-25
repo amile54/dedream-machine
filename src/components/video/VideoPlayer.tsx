@@ -387,7 +387,17 @@ export const VideoPlayer: React.FC = () => {
                     showToast('⚠️ 截取范围无效：起点必须在终点之前');
                     return;
                 }
-                await exportClip(project.videoFilePath, clipStartTime, clipEndTime, outputPath, isAudio);
+                // Use the proxy video (H.264 MP4) as source — guarantees web-compatible output.
+                // The original video might be MKV/HEVC which WebKit can't play after `-c copy`.
+                let clipSource = project.videoFilePath;
+                if (project.proxyFilePath) {
+                    // Resolve relative proxy path to absolute
+                    const proxyPath = project.proxyFilePath.startsWith('/')
+                        ? project.proxyFilePath
+                        : await join(workspace, project.proxyFilePath);
+                    clipSource = proxyPath;
+                }
+                await exportClip(clipSource, clipStartTime, clipEndTime, outputPath, isAudio);
 
                 // Record file to asset
                 const relativePath = [...pathParts, filename].join('/');
