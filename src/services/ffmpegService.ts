@@ -309,24 +309,30 @@ export async function exportClip(
 ): Promise<void> {
     await ensureDirForFile(outputPath);
 
-    // Default to strict video copy
+    const duration = endTime - startTime;
+
+    // Use -t (duration) instead of -to to avoid absolute-vs-relative confusion.
+    // -ss before -i for fast seeking; -avoid_negative_ts fix timestamp alignment.
+    // -map explicitly selects first video + first audio (optional) to prevent stream issues.
     let ffmpegArgs = [
         '-v', 'warning',
         '-ss', startTime.toString(),
-        '-to', endTime.toString(),
         '-i', inputPath,
+        '-t', duration.toString(),
+        '-map', '0:v:0',    // first video stream
+        '-map', '0:a:0?',   // first audio stream (optional — some clips may have no audio)
         '-c', 'copy',
+        '-avoid_negative_ts', 'make_zero',
         '-y',
         outputPath,
     ];
 
     if (isAudio) {
-        // Extract high-quality audio only (first audio stream)
         ffmpegArgs = [
             '-v', 'warning',
             '-ss', startTime.toString(),
-            '-to', endTime.toString(),
             '-i', inputPath,
+            '-t', duration.toString(),
             '-map', '0:a:0',
             '-vn',
             '-b:a', '192k',
