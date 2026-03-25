@@ -23,7 +23,6 @@ export const VideoPlayer: React.FC = () => {
     const addCutPoint = useProjectStore(s => s.addCutPoint);
     const saveProject = useProjectStore(s => s.saveProject);
     const setSubtitleFilePath = useProjectStore(s => s.setSubtitleFilePath);
-    const addFileToAsset = useProjectStore(s => s.addFileToAsset);
 
     const {
         isPlaying,
@@ -387,14 +386,24 @@ export const VideoPlayer: React.FC = () => {
         setClipEndTime(Math.min(currentTime + 5, duration));
     };
 
-    const handleAssetConfirm = async (asset: Asset, options?: { isAudio?: boolean; customFilename?: string }) => {
+    const handleAssetConfirm = async (asset: Asset, options?: { isAudio?: boolean; customFilename?: string }, parentAssetId?: string) => {
         setIsAssetModalOpen(false);
         if (!workspace || !project?.videoFilePath) return;
 
         try {
             const state = useProjectStore.getState();
-            const pathParts = ['assets', asset.category, asset.name];
-            if (state.rootProject && state.activeAssetId) {
+            
+            // Base path resolution
+            let pathParts = ['assets', asset.category, asset.name];
+
+            if (parentAssetId) {
+                // We are saving hierarchically FROM the root INTO a sub-project (segment_analysis)
+                const parent = state.project?.assets?.find(a => a.id === parentAssetId);
+                if (parent) {
+                    pathParts.unshift('assets', 'segment_analysis', parent.name);
+                }
+            } else if (state.rootProject && state.activeAssetId) {
+                // We are CURRENTLY inside a sub-project analysis environment
                 const parent = state.rootProject.assets.find(a => a.id === state.activeAssetId);
                 if (parent) {
                     pathParts.unshift('assets', 'segment_analysis', parent.name);
@@ -411,7 +420,11 @@ export const VideoPlayer: React.FC = () => {
 
                 // Record file to asset
                 const relativePath = [...pathParts, filename].join('/');
-                addFileToAsset(asset.id, { path: relativePath, timestamp, type: 'screenshot' });
+                if (parentAssetId) {
+                    state.addFileToSubProjectAsset(parentAssetId, asset.id, { path: relativePath, timestamp, type: 'screenshot' });
+                } else {
+                    state.addFileToAsset(asset.id, { path: relativePath, timestamp, type: 'screenshot' });
+                }
 
                 showToast(`提取成功！截图已保存至 ${asset.name} 资产`);
             } else if (modalMode === 'clip') {
@@ -447,9 +460,13 @@ export const VideoPlayer: React.FC = () => {
 
                 // Record file to asset
                 const relativePath = [...pathParts, filename].join('/');
-                addFileToAsset(asset.id, { path: relativePath, timestamp: clipStartTime, type: isAudio ? 'audio' : 'clip' });
+                if (parentAssetId) {
+                    state.addFileToSubProjectAsset(parentAssetId, asset.id, { path: relativePath, timestamp: clipStartTime, type: isAudio ? 'audio' : 'clip' });
+                } else {
+                    state.addFileToAsset(asset.id, { path: relativePath, timestamp: clipStartTime, type: isAudio ? 'audio' : 'clip' });
+                }
 
-                if (asset.category === 'segment_analysis' && !isAudio) {
+                if (!parentAssetId && asset.category === 'segment_analysis' && !isAudio) {
                     const now = new Date().toISOString();
                     const subProject = {
                         videoFilePath: relativePath,   // relative to workspace — portable across machines

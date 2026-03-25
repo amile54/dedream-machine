@@ -39,6 +39,10 @@ interface ProjectState {
     addFileToAsset: (assetId: string, file: AssetFile) => void;
     removeAssetFile: (assetId: string, filePath: string) => void;
 
+    // Sub-Project Nested Asset operations (for Segment Analysis)
+    addSubProjectAsset: (parentAssetId: string, category: AssetCategory, name: string) => void;
+    addFileToSubProjectAsset: (parentAssetId: string, subAssetId: string, file: AssetFile) => void;
+
     // Project I/O
     saveProject: () => Promise<void>;
     loadProject: (workspace: string) => Promise<boolean>;
@@ -393,6 +397,76 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         const assets = (project.assets || []).map(a =>
             a.id === assetId ? { ...a, files: [...(a.files || []), file] } : a
         );
+
+        set({
+            project: { ...project, assets, updatedAt: new Date().toISOString() },
+            isDirty: true,
+        });
+    },
+
+    addSubProjectAsset: (parentAssetId, category, name) => {
+        const { project } = get();
+        if (!project) return;
+
+        const newAsset: Asset = {
+            id: uuidv4(),
+            name,
+            category,
+            description: '',
+            createdAt: new Date().toISOString(),
+            files: [],
+        };
+
+        const assets = (project.assets || []).map(parent => {
+            if (parent.id === parentAssetId && parent.category === 'segment_analysis') {
+                const spData = parent.subProjectData || {
+                    id: uuidv4(),
+                    name: parent.name,
+                    videoFilePath: '',
+                    segments: [],
+                    textBlocks: [],
+                    assets: [],
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                };
+                return {
+                    ...parent,
+                    subProjectData: { 
+                        ...spData,
+                        assets: [...(spData.assets || []), newAsset],
+                        updatedAt: new Date().toISOString()
+                    }
+                };
+            }
+            return parent;
+        });
+
+        set({
+            project: { ...project, assets, updatedAt: new Date().toISOString() },
+            isDirty: true,
+        });
+    },
+
+    addFileToSubProjectAsset: (parentAssetId, subAssetId, file) => {
+        const { project } = get();
+        if (!project) return;
+
+        const assets = (project.assets || []).map(parent => {
+            if (parent.id === parentAssetId && parent.subProjectData) {
+                const subAssets = (parent.subProjectData.assets || []).map(sub => 
+                    sub.id === subAssetId ? { ...sub, files: [...(sub.files || []), file] } : sub
+                );
+                return {
+                    ...parent,
+                    subProjectData: {
+                        ...parent.subProjectData,
+                        assets: subAssets,
+                        updatedAt: new Date().toISOString()
+                    }
+                };
+            }
+            return parent;
+        });
 
         set({
             project: { ...project, assets, updatedAt: new Date().toISOString() },
