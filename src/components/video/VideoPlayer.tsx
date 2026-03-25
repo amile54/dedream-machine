@@ -257,6 +257,7 @@ export const VideoPlayer: React.FC = () => {
             const existingProject = useProjectStore.getState().project;
             if (existingProject && existingProject.segments.length > 0) {
                 // Preserve existing segments/textBlocks, just update the video path (immutably)
+                // Clear proxyFilePath so the old stale path doesn't persist through the spread
                 const snappedSegments = existingProject.segments.map(seg => ({
                     ...seg,
                     startTime: snapToFrame(seg.startTime, info.fps),
@@ -265,6 +266,7 @@ export const VideoPlayer: React.FC = () => {
                 useProjectStore.getState().setProject({
                     ...existingProject,
                     videoFilePath: videoPath,
+                    proxyFilePath: undefined as any,
                     segments: snappedSegments,
                 });
                 console.log('[VideoPlayer] Existing project found with', snappedSegments.length, 'segments — preserved & frame-snapped');
@@ -538,6 +540,9 @@ export const VideoPlayer: React.FC = () => {
         setVideoError(null);
         setIsTranscoding(false);
         setTranscodingProgress(0);
+        // Also clear the stale proxyFilePath from project store so re-import
+        // can properly overwrite it with the new transcoded proxy path
+        setProxyFilePath(undefined as any);
         // After state clears, the component re-renders showing the import UI,
         // but we trigger import directly for better UX
         setTimeout(() => handleImportVideo(), 100);
