@@ -5,6 +5,18 @@ import { invoke } from '@tauri-apps/api/core';
 import { snapToFrame } from '../utils/frameUtils';
 import { useVideoStore } from './videoStore';
 
+// Add universal path resolver at the top to compute absolute paths on the fly without mutating global state
+export function resolveWorkspacePath(workspace: string | null, filepath: string | undefined): string {
+    if (!filepath || !workspace) return filepath || '';
+    // Check if it's already an absolute path (starts with /, \, or Windows drive letter)
+    if (filepath.startsWith('/') || filepath.startsWith('\\') || /^[A-Za-z]:[/\\]/.test(filepath)) {
+        return filepath;
+    }
+    // It's a relative path, resolve against workspace
+    const sep = workspace.includes('\\') ? '\\' : '/';
+    return `${workspace}${sep}${filepath}`;
+}
+
 interface ProjectState {
     workspace: string | null;
     project: Project | null;
@@ -506,34 +518,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         const { workspace, project, rootProject, activeAssetId } = get();
         if (!workspace || !project) return;
 
-        // Helper to ensure nested sub-project paths don't pollute the root JSON with absolute paths
-        const sanitizeSubProjectPaths = (subProj: any) => {
-            const subToSave = { ...subProj };
-            const toRelative = (p: string) => {
-                if (!p) return p;
-                const normalizedP = p.replace(/\\/g, '/');
-                const normalizedW = workspace.replace(/\\/g, '/');
-                if (normalizedP.startsWith(normalizedW)) {
-                    let rel = normalizedP.slice(normalizedW.length);
-                    return rel.replace(/^\//, '');
-                }
-                return p;
-            };
-            subToSave.videoFilePath = toRelative(subToSave.videoFilePath);
-            if (subToSave.proxyFilePath) {
-                subToSave.proxyFilePath = toRelative(subToSave.proxyFilePath);
-            }
-            return subToSave;
-        };
-
         try {
+            // Because our in-memory project now perfectly mirrors the disk format (pure relative paths),
+            // we no longer need to intercept or sanitize paths here!
             let projectToSave = project;
             if (rootProject && activeAssetId) {
                 const updatedRoot = { ...rootProject };
-                // Important: sanitize the sub-project relative paths before saving!
-                const safeSubProject = sanitizeSubProjectPaths(project);
                 updatedRoot.assets = updatedRoot.assets.map(a => 
-                    a.id === activeAssetId ? { ...a, subProjectData: safeSubProject } : a
+                    a.id === activeAssetId ? { ...a, subProjectData: { ...project } } : a
                 );
                 projectToSave = updatedRoot;
             } else {
@@ -672,19 +664,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             // Reset video state so VideoPlayer reloads with the sub-project's clip
             useVideoStore.getState().reset();
 
-            // Resolve relative paths → absolute using current workspace
-            const sub = { ...targetAsset.subProjectData };
-            const resolve = (p: string) => {
-                if (!p) return p;
-                // Already absolute? keep as-is (legacy data)
-                if (p.startsWith('/') || p.startsWith('\\')) return p;
-                // Relative → join with workspace
-                return `${workspace}/${p}`;
-            };
-            sub.videoFilePath = resolve(sub.videoFilePath);
-            if (sub.proxyFilePath) sub.proxyFilePath = resolve(sub.proxyFilePath);
-
-            // Swap project pointer to the sub-project
+            const sub = JSON.parse(JSON.stringify(targetAsset.subProjectData)) as Project;
+            
+            // We NO LONGER mutate the paths to be absolute here.
+            // The memory state now remains pure and relative. Consumer UI handles resolution on the fly.
+            
             set({
                 rootProject: project,
                 project: sub,
@@ -699,32 +683,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         const { project, rootProject, activeAssetId, isDirty, workspace } = get();
         if (!rootProject || !activeAssetId || !project || !workspace) return;
 
-        // Helper to ensure nested sub-project paths don't pollute the root JSON with absolute paths
-        const sanitizeSubProjectPaths = (subProj: any) => {
-            const subToSave = { ...subProj };
-            const toRelative = (p: string) => {
-                if (!p) return p;
-                const normalizedP = p.replace(/\\/g, '/');
-                const normalizedW = workspace.replace(/\\/g, '/');
-                if (normalizedP.startsWith(normalizedW)) {
-                    let rel = normalizedP.slice(normalizedW.length);
-                    return rel.replace(/^\//, '');
-                }
-                return p;
-            };
-            subToSave.videoFilePath = toRelative(subToSave.videoFilePath);
-            if (subToSave.proxyFilePath) {
-                subToSave.proxyFilePath = toRelative(subToSave.proxyFilePath);
-            }
-            return subToSave;
-        };
-
-        const subToSave = sanitizeSubProjectPaths(project);
-
-        // Sync the modified sub-project back into the root project
+        // Sync the perfectly pure sub-project back into the root project directly
         const updatedRoot = { ...rootProject };
         updatedRoot.assets = updatedRoot.assets.map(a => 
-            a.id === activeAssetId ? { ...a, subProjectData: subToSave } : a
+            a.id === activeAssetId ? { ...a, subProjectData: project } : a
         );
 
         // Reset video state so VideoPlayer reloads the root project's video

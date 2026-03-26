@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useVideoStore } from '../../stores/videoStore';
-import { useProjectStore } from '../../stores/projectStore';
+import { useProjectStore, resolveWorkspacePath } from '../../stores/projectStore';
 import { useTimelineStore } from '../../stores/timelineStore';
 import { formatTimeCompact } from '../../utils/timeFormat';
 import { snapToFrame } from '../../utils/frameUtils';
@@ -40,6 +40,7 @@ export const Timeline: React.FC = () => {
     const isTranscoding = useVideoStore(s => s.isTranscoding);
 
     const project = useProjectStore(s => s.project);
+    const workspace = useProjectStore(s => s.workspace);
 
     const pixelsPerSecond = useTimelineStore(s => s.pixelsPerSecond);
     const selectedSegmentId = useTimelineStore(s => s.selectedSegmentId);
@@ -63,7 +64,7 @@ export const Timeline: React.FC = () => {
 
     // --- Auto Cut Error Detection (Background Async) ---
     useEffect(() => {
-        if (!project || !project.videoFilePath || isTranscoding) return;
+        if (!project || !project.videoFilePath || !workspace || isTranscoding) return;
 
         // Find segments that actively need verification (start boundary > 0, unverified)
         const unverified = segments.filter(s => s.startTime > 0 && s.isCutError === undefined);
@@ -80,7 +81,8 @@ export const Timeline: React.FC = () => {
                 if (!stillExistsAndUnverified) continue;
 
                 // Perform the async targeted detection (0.4s window)
-                const hasCut = await detectSceneChange(project.videoFilePath, seg.startTime);
+                const absVideoPath = resolveWorkspacePath(workspace, project.videoFilePath);
+                const hasCut = await detectSceneChange(absVideoPath, seg.startTime);
                 
                 if (isCancelled) break;
 
@@ -95,7 +97,7 @@ export const Timeline: React.FC = () => {
         runVerification();
 
         return () => { isCancelled = true; };
-    }, [project?.videoFilePath, segments]);
+    }, [project?.videoFilePath, segments, workspace]);
 
     const [isDraggingStyle, setIsDraggingStyle] = useState(false);
     const isDraggingRef = useRef(false);

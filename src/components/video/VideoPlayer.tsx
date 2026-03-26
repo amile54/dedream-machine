@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useVideoStore } from '../../stores/videoStore';
-import { useProjectStore } from '../../stores/projectStore';
+import { useProjectStore, resolveWorkspacePath } from '../../stores/projectStore';
 import { useTimelineStore } from '../../stores/timelineStore';
 import { formatTime } from '../../utils/timeFormat';
 import { snapToFrame } from '../../utils/frameUtils';
@@ -87,33 +87,34 @@ export const VideoPlayer: React.FC = () => {
 
     // Load proxy if project already has one
     useEffect(() => {
-        if (project?.proxyFilePath && !proxyUrl) {
+        if (project?.proxyFilePath && !proxyUrl && workspace) {
             const loadVideo = async () => {
                 try {
-                    const path = project.proxyFilePath;
+                    const path = resolveWorkspacePath(workspace, project.proxyFilePath);
                     const url = await invoke<string>('get_stream_url', { filePath: path });
                     console.log('[VideoPlayer] Loading existing video via streaming server:', path, '-> URL:', url);
                     setProxyUrl(url);
-                    setOriginalVideoPath(project.videoFilePath);
+                    setOriginalVideoPath(resolveWorkspacePath(workspace, project.videoFilePath));
                 } catch (err) {
                     console.error('[VideoPlayer] Failed to get video URL:', err);
                 }
             };
             loadVideo();
         }
-    }, [project, proxyUrl, setProxyUrl, setOriginalVideoPath]);
+    }, [project, proxyUrl, setProxyUrl, setOriginalVideoPath, workspace]);
 
     // Probe for embedded subtitle & audio tracks when video loads
     useEffect(() => {
-        if (project?.videoFilePath) {
-            getSubtitleTracks(project.videoFilePath)
+        if (project?.videoFilePath && workspace) {
+            const absVideoPath = resolveWorkspacePath(workspace, project.videoFilePath);
+            getSubtitleTracks(absVideoPath)
                 .then(tracks => {
                     setEmbeddedTracks(tracks);
                     if (tracks.length > 0) console.log('[VideoPlayer] Found embedded subtitle tracks:', tracks);
                 })
                 .catch(err => console.warn('[VideoPlayer] Could not probe subtitles:', err));
 
-            getAudioTracks(project.videoFilePath)
+            getAudioTracks(absVideoPath)
                 .then(tracks => {
                     setAudioTracks(tracks);
                     if (tracks.length > 0) {
@@ -418,7 +419,8 @@ export const VideoPlayer: React.FC = () => {
                 const filename = baseName.endsWith('.png') ? baseName : `${baseName}.png`;
                 const outputPath = await join(workspace, ...pathParts, filename);
 
-                await takeScreenshot(project.videoFilePath, timestamp, outputPath);
+                const absVideoPath = resolveWorkspacePath(workspace, project.videoFilePath);
+                await takeScreenshot(absVideoPath, timestamp, outputPath);
 
                 // Record file to asset
                 const relativePath = [...pathParts, filename].join('/');
@@ -450,14 +452,11 @@ export const VideoPlayer: React.FC = () => {
                 }
                 // Use the proxy video (H.264 MP4) as source — guarantees web-compatible output.
                 // The original video might be MKV/HEVC which WebKit can't play after `-c copy`.
-                let clipSource = project.videoFilePath;
+                const absVideoPath = resolveWorkspacePath(workspace, project.videoFilePath);
+                let clipSource = absVideoPath;
                 if (project.proxyFilePath) {
                     // Resolve relative proxy path to absolute, supporting both POSIX and Windows
-                    const isAbsolute = project.proxyFilePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(project.proxyFilePath);
-                    const proxyPath = isAbsolute
-                        ? project.proxyFilePath
-                        : await join(workspace, project.proxyFilePath);
-                    clipSource = proxyPath;
+                    clipSource = resolveWorkspacePath(workspace, project.proxyFilePath);
                 }
                 const currentFps = useVideoStore.getState().fps || 24;
                 await exportClip(clipSource, clipStartTime, clipEndTime, outputPath, isAudio, currentFps);
@@ -788,7 +787,7 @@ export const VideoPlayer: React.FC = () => {
                             subtitleCues={subtitleCues}
                             showSubtitles={showSubtitles}
                             loadingTrack={loadingTrack}
-                            videoFilePath={project?.videoFilePath}
+                            videoFilePath={resolveWorkspacePath(workspace, project?.videoFilePath)}
                             onClose={() => setShowSubtitleMenu(false)}
                             onCuesLoaded={(cues) => {
                                 setSubtitleCues(cues);
