@@ -478,7 +478,9 @@ export const VideoPlayer: React.FC = () => {
                             id: crypto.randomUUID(),
                             index: 1,
                             startTime: 0,
-                            endTime: clipEndTime - clipStartTime,
+                            // Mirror the one-frame subtraction done in exportClip so the
+                            // sub-project's segment range exactly matches the on-disk clip length.
+                            endTime: Math.max(0, (clipEndTime - clipStartTime) - (1.0 / currentFps)),
                             description: '',
                             category: '',
                         }],

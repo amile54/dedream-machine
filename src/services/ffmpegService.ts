@@ -356,11 +356,15 @@ export async function exportClip(
     // Exact full duration
     const duration = Math.max(0, endTime - startTime);
 
-    // To prevent bleeding into the next segment (grabbing its first frame), we subtract half a frame
-    // from the duration. This mathematically guarantees FFmpeg stops exactly on the last frame of our segment.
-    // This perfectly solves the "bleeding" issue and also supports VFR (unlike `frames:v`).
-    const halfFrame = 0.5 / (fps || 24);
-    const safeDuration = Math.max(0, duration - halfFrame);
+    // SEMANTIC CONTRACT: `endTime` is the EXCLUSIVE endpoint — it represents the first frame
+    // of the NEXT segment (by design, the playhead at a cut point shows the next segment's frame).
+    // Therefore the clip must contain frames in [startTime, endTime) — never including the endTime frame.
+    //
+    // We subtract exactly one full frame from the duration. This gives FFmpeg enough margin so that
+    // any internal PTS rounding during H.264 encoding never captures the forbidden boundary frame.
+    // (Half-frame was insufficient because FFmpeg can round up to the nearest decodable PTS.)
+    const oneFrame = 1.0 / (fps || 24);
+    const safeDuration = Math.max(0, duration - oneFrame);
 
     // We must re-encode (transcode) rather than use `-c copy` to guarantee frame-level accuracy.
     // Stream copy (-c copy) operates on GOP keyframes, which causes clips to snap to the nearest keyframe 
