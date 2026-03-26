@@ -353,9 +353,14 @@ export async function exportClip(
 ): Promise<void> {
     await ensureDirForFile(outputPath);
 
-    // Exact clipping duration in seconds and frames
+    // Exact full duration
     const duration = Math.max(0, endTime - startTime);
-    const frameCount = Math.round(duration * fps);
+
+    // To prevent bleeding into the next segment (grabbing its first frame), we subtract half a frame
+    // from the duration. This mathematically guarantees FFmpeg stops exactly on the last frame of our segment.
+    // This perfectly solves the "bleeding" issue and also supports VFR (unlike `frames:v`).
+    const halfFrame = 0.5 / (fps || 24);
+    const safeDuration = Math.max(0, duration - halfFrame);
 
     // We must re-encode (transcode) rather than use `-c copy` to guarantee frame-level accuracy.
     // Stream copy (-c copy) operates on GOP keyframes, which causes clips to snap to the nearest keyframe 
@@ -365,7 +370,7 @@ export async function exportClip(
         '-v', 'warning',
         '-ss', startTime.toString(),
         '-i', inputPath,
-        '-frames:v', frameCount.toString(),
+        '-t', safeDuration.toString(),
         '-map', '0:v:0',    // first video stream
         '-map', '0:a:0?',   // first audio stream (optional)
         '-c:v', 'libx264',
