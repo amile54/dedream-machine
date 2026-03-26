@@ -109,3 +109,40 @@
 ### 7. 项目切换
 - 顶部标题栏新增「📂 打开文件夹」按钮
 - 点击后自动保存当前项目 → 弹出文件夹选择器 → 重新加载新 workspace，无需重启应用
+
+---
+
+## 7. Phase 8: 路径架构重构与帧精确裁切修复 (2026-03-26)
+
+本轮修复了三个相互关联的底层 Bug，并对路径处理架构进行了根本性重构。
+
+### 1. 纯净内存路径架构（彻底解决 Windows 路径污染）
+
+**问题根因：** 旧版 `enterSubProject` 为了让 `VideoPlayer` 能播放视频，会直接把全局 Store 里的相对路径**原地篡改为绝对路径**。这导致用户在二级页面点「保存」时，带有 Windows 盘符的绝对路径（如 `C:\...`）被直接写进 `project.json`，下次再进入时发生路径双重拼接（如 `C:\...\C:\...`）。
+
+**架构决策：** 在 `projectStore.ts` 中导出公共工具函数 `resolveWorkspacePath(workspace, filepath)`，并确立以下不变式：
+
+> **Store 中所有路径永远是纯相对路径，与硬盘文件格式完全一致。消费层（组件）在读取时按需调用 `resolveWorkspacePath` 临时解析为绝对路径。**
+
+这消除了 `enterSubProject`、`exitSubProject`、`saveProject` 中所有路径清洗和拦截逻辑，代码量净减少约 60 行。
+
+### 2. 帧精确裁切语义契约（彻底解决多出一帧）
+
+**语义约定（在 `recalculateSegments` 中确认）：**
+- `seg.endTime` = 下一片段的 `startTime` = 切分点时间戳
+- 游标停在切分点时，画面显示的是**下一个镜头的第一帧**
+- 因此片段裁切范围为 `[startTime, endTime)`，`endTime` 帧**禁止被包含**
+
+**为什么半帧减法不够：** H.264 编码器将每帧圆整到最近的可展示时间戳（PTS）。当截取时长与帧边界过于接近时，FFmpeg 仍可能在 PTS 圆整时「吸入」边界帧。
+
+**最终方案（`ffmpegService.ts`）：** 将视频裁切时长减去**整整一帧**（`1.0 / fps`），给编码器足够的 PTS 余量，从数学上保证边界帧永远不会被触及。音频裁切路径使用完整时长（不受帧边界约束）。
+
+```ts
+// 视频裁切：endTime 是独占端点，需减去整一帧
+const oneFrame = 1.0 / (fps || 24);
+const safeDuration = Math.max(0, duration - oneFrame);
+```
+
+### 3. 子项目 endTime 同步修复（彻底解决游标拉不到底）
+
+创建片段子项目时，初始 Segment 的 `endTime` 同步减去一帧，与实际导出的 mp4 文件时长保持一致，消除二级页面拉片时游标无法触底的问题。
