@@ -348,12 +348,14 @@ export async function exportClip(
     startTime: number,
     endTime: number,
     outputPath: string,
-    isAudio?: boolean
+    isAudio?: boolean,
+    fps: number = 24
 ): Promise<void> {
     await ensureDirForFile(outputPath);
 
-    // Exact clipping duration
-    const duration = endTime - startTime;
+    // Exact clipping duration in seconds and frames
+    const duration = Math.max(0, endTime - startTime);
+    const frameCount = Math.round(duration * fps);
 
     // We must re-encode (transcode) rather than use `-c copy` to guarantee frame-level accuracy.
     // Stream copy (-c copy) operates on GOP keyframes, which causes clips to snap to the nearest keyframe 
@@ -363,7 +365,7 @@ export async function exportClip(
         '-v', 'warning',
         '-ss', startTime.toString(),
         '-i', inputPath,
-        '-t', duration.toString(),
+        '-frames:v', frameCount.toString(),
         '-map', '0:v:0',    // first video stream
         '-map', '0:a:0?',   // first audio stream (optional)
         '-c:v', 'libx264',

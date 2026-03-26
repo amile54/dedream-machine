@@ -506,14 +506,34 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         const { workspace, project, rootProject, activeAssetId } = get();
         if (!workspace || !project) return;
 
+        // Helper to ensure nested sub-project paths don't pollute the root JSON with absolute paths
+        const sanitizeSubProjectPaths = (subProj: any) => {
+            const subToSave = { ...subProj };
+            const toRelative = (p: string) => {
+                if (!p) return p;
+                const normalizedP = p.replace(/\\/g, '/');
+                const normalizedW = workspace.replace(/\\/g, '/');
+                if (normalizedP.startsWith(normalizedW)) {
+                    let rel = normalizedP.slice(normalizedW.length);
+                    return rel.replace(/^\//, '');
+                }
+                return p;
+            };
+            subToSave.videoFilePath = toRelative(subToSave.videoFilePath);
+            if (subToSave.proxyFilePath) {
+                subToSave.proxyFilePath = toRelative(subToSave.proxyFilePath);
+            }
+            return subToSave;
+        };
+
         try {
-            // If we are currently inside a nested sub-project, we must sync our local project state 
-            // back into the root project's asset tree before saving to disk.
             let projectToSave = project;
             if (rootProject && activeAssetId) {
                 const updatedRoot = { ...rootProject };
+                // Important: sanitize the sub-project relative paths before saving!
+                const safeSubProject = sanitizeSubProjectPaths(project);
                 updatedRoot.assets = updatedRoot.assets.map(a => 
-                    a.id === activeAssetId ? { ...a, subProjectData: { ...project } } : a
+                    a.id === activeAssetId ? { ...a, subProjectData: safeSubProject } : a
                 );
                 projectToSave = updatedRoot;
             } else {
@@ -679,22 +699,27 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         const { project, rootProject, activeAssetId, isDirty, workspace } = get();
         if (!rootProject || !activeAssetId || !project || !workspace) return;
 
-        // Convert sub-project paths back to relative before saving
-        const subToSave = { ...project };
-        const toRelative = (p: string) => {
-            if (!p) return p;
-            const normalizedP = p.replace(/\\/g, '/');
-            const normalizedW = workspace.replace(/\\/g, '/');
-            if (normalizedP.startsWith(normalizedW)) {
-                let rel = normalizedP.slice(normalizedW.length);
-                return rel.replace(/^\//, '');
+        // Helper to ensure nested sub-project paths don't pollute the root JSON with absolute paths
+        const sanitizeSubProjectPaths = (subProj: any) => {
+            const subToSave = { ...subProj };
+            const toRelative = (p: string) => {
+                if (!p) return p;
+                const normalizedP = p.replace(/\\/g, '/');
+                const normalizedW = workspace.replace(/\\/g, '/');
+                if (normalizedP.startsWith(normalizedW)) {
+                    let rel = normalizedP.slice(normalizedW.length);
+                    return rel.replace(/^\//, '');
+                }
+                return p;
+            };
+            subToSave.videoFilePath = toRelative(subToSave.videoFilePath);
+            if (subToSave.proxyFilePath) {
+                subToSave.proxyFilePath = toRelative(subToSave.proxyFilePath);
             }
-            return p;
+            return subToSave;
         };
-        subToSave.videoFilePath = toRelative(subToSave.videoFilePath);
-        if (subToSave.proxyFilePath) {
-            subToSave.proxyFilePath = toRelative(subToSave.proxyFilePath);
-        }
+
+        const subToSave = sanitizeSubProjectPaths(project);
 
         // Sync the modified sub-project back into the root project
         const updatedRoot = { ...rootProject };

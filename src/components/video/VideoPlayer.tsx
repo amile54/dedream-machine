@@ -459,7 +459,8 @@ export const VideoPlayer: React.FC = () => {
                         : await join(workspace, project.proxyFilePath);
                     clipSource = proxyPath;
                 }
-                await exportClip(clipSource, clipStartTime, clipEndTime, outputPath, isAudio);
+                const currentFps = useVideoStore.getState().fps || 24;
+                await exportClip(clipSource, clipStartTime, clipEndTime, outputPath, isAudio, currentFps);
 
                 // Record file to asset
                 const relativePath = [...pathParts, filename].join('/');
