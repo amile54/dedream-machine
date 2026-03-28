@@ -12,6 +12,8 @@ import type { SubtitleTrackInfo, AudioTrackInfo } from '../../services/ffmpegSer
 import { AssetSelectModal } from '../assets/AssetSelectModal';
 import { SubtitleMenu } from './SubtitleMenu';
 import type { Asset, SubtitleCue } from '../../types';
+import { parseSrt } from '../../services/subtitleParser';
+import { ensureOriginalVideoAvailable } from '../../utils/originalVideoPath';
 import './VideoPlayer.css';
 
 export const VideoPlayer: React.FC = () => {
@@ -73,6 +75,11 @@ export const VideoPlayer: React.FC = () => {
     const [audioTracks, setAudioTracks] = useState<AudioTrackInfo[]>([]);
     const [selectedAudioIndex, setSelectedAudioIndex] = useState<number | null>(null);
 
+    const getPlaybackContextKey = useCallback(() => {
+        const state = useProjectStore.getState();
+        return `${state.workspace || ''}::${state.activeAssetId || 'root'}::${state.project?.videoFilePath || ''}`;
+    }, []);
+
     const showToast = (msg: string) => {
         setToastMessage(msg);
         setTimeout(() => setToastMessage(null), 3000);
@@ -126,9 +133,41 @@ export const VideoPlayer: React.FC = () => {
         }
     }, [project?.videoFilePath]);
 
+    useEffect(() => {
+        if (!workspace || !project?.subtitleFilePath) {
+            setSubtitleCues([]);
+            setShowSubtitles(false);
+            return;
+        }
+
+        let cancelled = false;
+
+        const loadSavedSubtitle = async () => {
+            try {
+                const { readTextFile } = await import('@tauri-apps/plugin-fs');
+                const subtitlePath = resolveWorkspacePath(workspace, project.subtitleFilePath);
+                const content = await readTextFile(subtitlePath);
+                if (cancelled) return;
+                setSubtitleCues(parseSrt(content));
+                setShowSubtitles(true);
+            } catch (err) {
+                if (!cancelled) {
+                    console.warn('[VideoPlayer] Could not restore saved subtitles:', err);
+                }
+            }
+        };
+
+        loadSavedSubtitle();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [project?.subtitleFilePath, workspace]);
+
     // Handle audio track selection — re-transcode with chosen track
     const handleSelectAudioTrack = useCallback(async (streamIndex: number) => {
         if (!project?.videoFilePath || !workspace) return;
+        const transcodeContextKey = getPlaybackContextKey();
         setSelectedAudioIndex(streamIndex);
         const track = audioTracks.find(t => t.index === streamIndex);
         showToast(`切换音轨: ${track?.title || 'Audio ' + streamIndex}，正在重新转码...`);
@@ -141,6 +180,10 @@ export const VideoPlayer: React.FC = () => {
                 (percent) => setTranscodingProgress(percent),
                 streamIndex,
             );
+            if (getPlaybackContextKey() !== transcodeContextKey) {
+                console.warn('[VideoPlayer] Audio transcode finished for a stale context, discarding result');
+                return;
+            }
             const rememberedTime = currentTime;
             const newUrl = await invoke<string>('get_stream_url', { filePath: proxyPath });
             setProxyUrl(newUrl);
@@ -155,10 +198,12 @@ export const VideoPlayer: React.FC = () => {
         } catch (err) {
             showToast(`音轨切换失败: ${err}`);
         } finally {
-            setIsTranscoding(false);
-            setTranscodingProgress(0);
+            if (getPlaybackContextKey() === transcodeContextKey) {
+                setIsTranscoding(false);
+                setTranscodingProgress(0);
+            }
         }
-    }, [project?.videoFilePath, workspace, audioTracks, currentTime, showToast]);
+    }, [project?.videoFilePath, workspace, audioTracks, currentTime, showToast, getPlaybackContextKey]);
 
     const handleTimeUpdate = () => {
         if (!videoRef.current) return;
@@ -309,7 +354,7 @@ export const VideoPlayer: React.FC = () => {
             await saveProject();
 
             // Capture the workspace at import time to detect project-switch
-            const importWorkspace = workspace;
+            const importContextKey = getPlaybackContextKey();
 
             // Done with the synchronous part — user sees the UI
             setIsImporting(false);
@@ -327,12 +372,8 @@ export const VideoPlayer: React.FC = () => {
                     setTranscodingProgress(percent);
                 },
             ).then(async (proxyPath) => {
-                // Guard: if user switched projects during transcoding, discard this result
-                const currentWorkspace = useProjectStore.getState().workspace;
-                if (currentWorkspace !== importWorkspace) {
-                    console.warn('[VideoPlayer] Project switched during transcoding, discarding result');
-                    setIsTranscoding(false);
-                    setTranscodingProgress(0);
+                if (getPlaybackContextKey() !== importContextKey) {
+                    console.warn('[VideoPlayer] Project context changed during transcoding, discarding result');
                     return;
                 }
 
@@ -363,8 +404,10 @@ export const VideoPlayer: React.FC = () => {
                 console.log('[VideoPlayer] Hot-swap to optimized proxy complete');
             }).catch((err) => {
                 console.error('[VideoPlayer] Background transcode failed:', err);
-                setIsTranscoding(false);
-                setTranscodingProgress(0);
+                if (getPlaybackContextKey() === importContextKey) {
+                    setIsTranscoding(false);
+                    setTranscodingProgress(0);
+                }
             });
 
         } catch (err) {
@@ -419,8 +462,12 @@ export const VideoPlayer: React.FC = () => {
                 const filename = baseName.endsWith('.png') ? baseName : `${baseName}.png`;
                 const outputPath = await join(workspace, ...pathParts, filename);
 
-                const absVideoPath = resolveWorkspacePath(workspace, project.videoFilePath);
-                await takeScreenshot(absVideoPath, timestamp, outputPath);
+                const originalVideoPath = await ensureOriginalVideoPath();
+                if (!originalVideoPath) {
+                    showToast('未找到原始视频，已取消导出');
+                    return;
+                }
+                await takeScreenshot(originalVideoPath, timestamp, outputPath);
 
                 // Record file to asset
                 const relativePath = [...pathParts, filename].join('/');
@@ -450,13 +497,10 @@ export const VideoPlayer: React.FC = () => {
                     showToast('⚠️ 截取范围无效：起点必须在终点之前');
                     return;
                 }
-                // Use the proxy video (H.264 MP4) as source — guarantees web-compatible output.
-                // The original video might be MKV/HEVC which WebKit can't play after `-c copy`.
-                const absVideoPath = resolveWorkspacePath(workspace, project.videoFilePath);
-                let clipSource = absVideoPath;
-                if (project.proxyFilePath) {
-                    // Resolve relative proxy path to absolute, supporting both POSIX and Windows
-                    clipSource = resolveWorkspacePath(workspace, project.proxyFilePath);
+                const clipSource = await ensureOriginalVideoPath();
+                if (!clipSource) {
+                    showToast('未找到原始视频，已取消导出');
+                    return;
                 }
                 const currentFps = useVideoStore.getState().fps || 24;
                 await exportClip(clipSource, clipStartTime, clipEndTime, outputPath, isAudio, currentFps);
@@ -514,7 +558,11 @@ export const VideoPlayer: React.FC = () => {
     }, [proxyUrl]);
 
     // Re-link original video path (for when the project is opened on a different computer)
-    const handleRelinkVideo = async () => {
+    const handleRelinkVideo = useCallback(async (promptMessage?: string) => {
+        if (promptMessage && !confirm(promptMessage)) {
+            return null;
+        }
+
         const file = await open({
             multiple: false,
             title: '重新关联原始视频文件',
@@ -523,19 +571,28 @@ export const VideoPlayer: React.FC = () => {
                 extensions: ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'm4v', 'rmvb', 'ts', 'm2ts', 'vob', 'mpg', 'mpeg', '3gp'],
             }],
         });
-        if (!file) return;
+        if (!file) return null;
 
         const newPath = file as string;
         const store = useProjectStore.getState();
         if (store.project) {
-            store.project.videoFilePath = newPath;
-            store.setProject({ ...store.project });
+            store.setProject({ ...store.project, videoFilePath: newPath });
             setOriginalVideoPath(newPath);
             setVideoError(null);
             await store.saveProject();
             console.log('[VideoPlayer] Re-linked original video to:', newPath);
         }
-    };
+        return newPath;
+    }, [setOriginalVideoPath]);
+
+    const ensureOriginalVideoPath = useCallback(async () => {
+        return ensureOriginalVideoAvailable(
+            workspace,
+            project?.videoFilePath,
+            async (path) => invoke<boolean>('check_file_exists', { path }),
+            async () => handleRelinkVideo('找不到原始视频文件，无法导出截图或片段。现在重新关联吗？'),
+        );
+    }, [workspace, project?.videoFilePath, handleRelinkVideo]);
 
     // Allow re-import: clear stale video state and trigger import flow
     const handleReimportVideo = () => {

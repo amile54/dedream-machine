@@ -17,6 +17,43 @@ export function resolveWorkspacePath(workspace: string | null, filepath: string 
     return `${workspace}${sep}${filepath}`;
 }
 
+function isAbsolutePath(filepath: string): boolean {
+    return filepath.startsWith('/') || filepath.startsWith('\\') || /^[A-Za-z]:[/\\]/.test(filepath);
+}
+
+function normalizeToPortablePath(workspace: string, filepath: string | undefined): string | undefined {
+    if (!filepath) return filepath;
+    if (!isAbsolutePath(filepath)) {
+        return filepath.replace(/\\/g, '/');
+    }
+    if (!filepath.startsWith(workspace)) {
+        return filepath;
+    }
+
+    let relative = filepath.slice(workspace.length);
+    relative = relative.replace(/^[/\\]/, '');
+    return relative.replace(/\\/g, '/');
+}
+
+export function serializeProjectPaths(project: Project, workspace: string): Project {
+    return {
+        ...project,
+        videoFilePath: normalizeToPortablePath(workspace, project.videoFilePath) || project.videoFilePath,
+        proxyFilePath: normalizeToPortablePath(workspace, project.proxyFilePath),
+        subtitleFilePath: normalizeToPortablePath(workspace, project.subtitleFilePath),
+        assets: (project.assets || []).map(asset => ({
+            ...asset,
+            files: (asset.files || []).map(file => ({
+                ...file,
+                path: normalizeToPortablePath(workspace, file.path) || file.path,
+            })),
+            subProjectData: asset.subProjectData
+                ? serializeProjectPaths(asset.subProjectData, workspace)
+                : asset.subProjectData,
+        })),
+    };
+}
+
 interface ProjectState {
     workspace: string | null;
     project: Project | null;
@@ -519,8 +556,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         if (!workspace || !project) return;
 
         try {
-            // Because our in-memory project now perfectly mirrors the disk format (pure relative paths),
-            // we no longer need to intercept or sanitize paths here!
             let projectToSave = project;
             if (rootProject && activeAssetId) {
                 const updatedRoot = { ...rootProject };
@@ -532,14 +567,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
                 projectToSave = { ...project };
             }
 
-            // Convert proxyFilePath to relative for portability
-            if (projectToSave.proxyFilePath && projectToSave.proxyFilePath.startsWith(workspace)) {
-                // Extract the relative part (e.g. "/Users/me/project/proxy.mp4" -> "proxy.mp4")
-                let relative = projectToSave.proxyFilePath.slice(workspace.length);
-                // Remove leading slash or backslash
-                relative = relative.replace(/^[/\\]/, '');
-                projectToSave.proxyFilePath = relative;
-            }
+            projectToSave = serializeProjectPaths(projectToSave, workspace);
 
             await invoke('save_project', { workspace, project: projectToSave });
             set({ isDirty: false });
@@ -555,16 +583,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             await invoke('ensure_workspace_dirs', { workspace });
             const project = await invoke<Project | null>('load_project', { workspace });
             if (project) {
-                // Convert relative proxyFilePath back to absolute
-                if (project.proxyFilePath && !project.proxyFilePath.startsWith('/') && !project.proxyFilePath.match(/^[A-Za-z]:\\/)) {
-                    // It's a relative path — resolve against workspace
-                    const sep = workspace.includes('\\') ? '\\' : '/';
-                    project.proxyFilePath = workspace + sep + project.proxyFilePath;
-                }
-
                 // Verify proxy file actually exists on disk (user may have deleted it)
                 if (project.proxyFilePath) {
-                    const exists = await invoke<boolean>('check_file_exists', { path: project.proxyFilePath });
+                    const exists = await invoke<boolean>('check_file_exists', {
+                        path: resolveWorkspacePath(workspace, project.proxyFilePath),
+                    });
                     if (!exists) {
                         console.warn('[loadProject] Proxy file not found, clearing:', project.proxyFilePath);
                         project.proxyFilePath = undefined as any;
@@ -627,7 +650,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
         // Auto-save current project if dirty
         if (isDirty) {
-            try { await saveProject(); } catch { /* ignore */ }
+            try {
+                await saveProject();
+            } catch (err) {
+                console.error('[switchProject] Save failed, aborting switch:', err);
+                alert(`当前项目保存失败，已取消切换。\n\n${err}`);
+                return;
+            }
         }
 
         // Open folder picker

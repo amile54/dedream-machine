@@ -4,6 +4,8 @@ import { parseSrt } from '../../services/subtitleParser';
 import { extractSubtitleTrack } from '../../services/ffmpegService';
 import type { SubtitleTrackInfo, AudioTrackInfo } from '../../services/ffmpegService';
 import type { SubtitleCue } from '../../types';
+import { useProjectStore } from '../../stores/projectStore';
+import { join } from '@tauri-apps/api/path';
 
 interface SubtitleMenuProps {
     embeddedTracks: SubtitleTrackInfo[];
@@ -58,6 +60,7 @@ export const SubtitleMenu: React.FC<SubtitleMenuProps> = ({
     anchorRef,
 }) => {
     const btnRect = anchorRef.current?.getBoundingClientRect();
+    const workspace = useProjectStore(s => s.workspace);
 
     // Position: anchored above the button, right-aligned
     const menuStyle: React.CSSProperties = {
@@ -122,11 +125,25 @@ export const SubtitleMenu: React.FC<SubtitleMenuProps> = ({
                         });
                         if (file) {
                             try {
-                                const { readTextFile } = await import('@tauri-apps/plugin-fs');
-                                const content = await readTextFile(file as string);
+                                const { copyFile, mkdir, readTextFile } = await import('@tauri-apps/plugin-fs');
+                                const sourcePath = file as string;
+                                const sourceName = sourcePath.split(/[/\\]/).pop() || 'subtitle.srt';
+                                let subtitlePath = sourcePath;
+
+                                if (workspace) {
+                                    const targetDir = await join(workspace, 'assets', 'subtitles');
+                                    const filename = `${Date.now()}_${sourceName}`;
+                                    subtitlePath = await join(targetDir, filename);
+                                    await mkdir(targetDir, { recursive: true });
+                                    await copyFile(sourcePath, subtitlePath);
+                                    onSubtitleFileLoaded(['assets', 'subtitles', filename].join('/'));
+                                } else {
+                                    onSubtitleFileLoaded(sourcePath);
+                                }
+
+                                const content = await readTextFile(subtitlePath);
                                 const cues = parseSrt(content);
                                 onCuesLoaded(cues);
-                                onSubtitleFileLoaded(file as string);
                                 showToast(`已加载 ${cues.length} 条字幕`);
                             } catch (err) {
                                 showToast(`字幕加载失败: ${err}`);
