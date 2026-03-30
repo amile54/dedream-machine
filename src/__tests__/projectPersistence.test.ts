@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { serializeProjectPaths, useProjectStore } from '../stores/projectStore';
+import { repairLoadedProjectPaths, serializeProjectPaths, useProjectStore } from '../stores/projectStore';
 import { useVideoStore } from '../stores/videoStore';
 import type { Project } from '../types';
 
@@ -88,6 +88,27 @@ describe('project persistence', () => {
     expect(serialized.assets[0].subProjectData?.subtitleFilePath).toBe('assets/subtitles/scene-01.srt');
   });
 
+  it('repairs legacy segment-analysis subprojects to use their local clip path', () => {
+    const legacyProject = makeProject();
+    legacyProject.assets[0].files = [
+      {
+        path: 'assets/segment_analysis/Scene 01/clip.mp4',
+        type: 'clip',
+        timestamp: 12,
+      },
+    ];
+    legacyProject.assets[0].subProjectData = {
+      ...legacyProject.assets[0].subProjectData!,
+      videoFilePath: '/old/workspace/assets/segment_analysis/Scene 01/clip.mp4',
+      proxyFilePath: '/old/workspace/assets/segment_analysis/Scene 01/clip.mp4',
+    };
+
+    const repaired = repairLoadedProjectPaths(legacyProject, '/test/workspace');
+
+    expect(repaired.assets[0].subProjectData?.videoFilePath).toBe('assets/segment_analysis/Scene 01/clip.mp4');
+    expect(repaired.assets[0].subProjectData?.proxyFilePath).toBe('assets/segment_analysis/Scene 01/clip.mp4');
+  });
+
   it('passes the portable project payload to save_project', async () => {
     invokeMock.mockResolvedValue(undefined);
     useProjectStore.setState({
@@ -152,5 +173,41 @@ describe('project persistence', () => {
 
     expect(hasProject).toBe(true);
     expect(useProjectStore.getState().project?.proxyFilePath).toBe('proxy.mp4');
+  });
+
+  it('repairs legacy absolute subproject clip paths during load', async () => {
+    const project = {
+      ...makeProject(),
+      assets: [
+        {
+          ...makeProject().assets[0],
+          files: [
+            {
+              path: 'assets/segment_analysis/Scene 01/clip.mp4',
+              type: 'clip' as const,
+              timestamp: 12,
+            },
+          ],
+          subProjectData: {
+            ...makeProject().assets[0].subProjectData!,
+            videoFilePath: '/old/workspace/assets/segment_analysis/Scene 01/clip.mp4',
+            proxyFilePath: '/old/workspace/assets/segment_analysis/Scene 01/clip.mp4',
+          },
+        },
+      ],
+    };
+
+    invokeMock.mockImplementation(async (cmd) => {
+      if (cmd === 'ensure_workspace_dirs') return undefined;
+      if (cmd === 'load_project') return project;
+      if (cmd === 'check_file_exists') return true;
+      return undefined;
+    });
+
+    await useProjectStore.getState().loadProject('/test/workspace');
+
+    const loadedSubProject = useProjectStore.getState().project?.assets[0].subProjectData;
+    expect(loadedSubProject?.videoFilePath).toBe('assets/segment_analysis/Scene 01/clip.mp4');
+    expect(loadedSubProject?.proxyFilePath).toBe('assets/segment_analysis/Scene 01/clip.mp4');
   });
 });

@@ -54,6 +54,44 @@ export function serializeProjectPaths(project: Project, workspace: string): Proj
     };
 }
 
+export function repairLoadedProjectPaths(project: Project, workspace: string): Project {
+    const repairedAssets = (project.assets || []).map(asset => {
+        const repairedFiles = (asset.files || []).map(file => ({
+            ...file,
+            path: normalizeToPortablePath(workspace, file.path) || file.path,
+        }));
+
+        let repairedSubProject = asset.subProjectData
+            ? repairLoadedProjectPaths(asset.subProjectData, workspace)
+            : asset.subProjectData;
+
+        const clipFilePath = repairedFiles.find(file => file.type === 'clip')?.path;
+        if (asset.category === 'segment_analysis' && repairedSubProject && clipFilePath) {
+            // Legacy projects sometimes persisted absolute paths from another workspace.
+            // The clip file stored on the asset itself is the authoritative source.
+            repairedSubProject = {
+                ...repairedSubProject,
+                videoFilePath: clipFilePath,
+                proxyFilePath: clipFilePath,
+            };
+        }
+
+        return {
+            ...asset,
+            files: repairedFiles,
+            subProjectData: repairedSubProject,
+        };
+    });
+
+    return {
+        ...project,
+        videoFilePath: normalizeToPortablePath(workspace, project.videoFilePath) || project.videoFilePath,
+        proxyFilePath: normalizeToPortablePath(workspace, project.proxyFilePath),
+        subtitleFilePath: normalizeToPortablePath(workspace, project.subtitleFilePath),
+        assets: repairedAssets,
+    };
+}
+
 interface ProjectState {
     workspace: string | null;
     project: Project | null;
@@ -581,8 +619,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         set({ isLoading: true });
         try {
             await invoke('ensure_workspace_dirs', { workspace });
-            const project = await invoke<Project | null>('load_project', { workspace });
-            if (project) {
+            const rawProject = await invoke<Project | null>('load_project', { workspace });
+            if (rawProject) {
+                const project = repairLoadedProjectPaths(rawProject, workspace);
                 // Verify proxy file actually exists on disk (user may have deleted it)
                 if (project.proxyFilePath) {
                     const exists = await invoke<boolean>('check_file_exists', {
