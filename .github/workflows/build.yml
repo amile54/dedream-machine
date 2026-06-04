@@ -31,28 +31,6 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      # ---- macOS: 下载 ARM 版 FFmpeg & FFprobe ----
-      - name: Download FFmpeg (macOS ARM)
-        if: matrix.platform == 'macos-14'
-        run: |
-          mkdir -p src-tauri/bin
-
-          # Download ffmpeg static binary
-          curl -L -o /tmp/ffmpeg.zip https://evermeet.cx/ffmpeg/getrelease/zip
-          unzip -o /tmp/ffmpeg.zip -d /tmp/ffmpeg_out
-          cp /tmp/ffmpeg_out/ffmpeg src-tauri/bin/ffmpeg-aarch64-apple-darwin
-          chmod +x src-tauri/bin/ffmpeg-aarch64-apple-darwin
-
-          # Download ffprobe static binary
-          curl -L -o /tmp/ffprobe.zip https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip
-          unzip -o /tmp/ffprobe.zip -d /tmp/ffprobe_out
-          cp /tmp/ffprobe_out/ffprobe src-tauri/bin/ffprobe-aarch64-apple-darwin
-          chmod +x src-tauri/bin/ffprobe-aarch64-apple-darwin
-
-          # Verify
-          ls -lh src-tauri/bin/
-          file src-tauri/bin/ffmpeg-aarch64-apple-darwin
-
       # ---- Windows: 下载 x64 版 FFmpeg & FFprobe ----
       - name: Download FFmpeg (Windows x64)
         if: matrix.platform == 'windows-latest'
@@ -72,6 +50,21 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm install
+
+      # ---- macOS: 使用 npm 包里的 Apple Silicon sidecar ----
+      - name: Install FFmpeg sidecars (macOS ARM)
+        if: matrix.platform == 'macos-14'
+        run: |
+          mkdir -p src-tauri/bin
+
+          cp "$(node -e "process.stdout.write(require('ffmpeg-static'))")" src-tauri/bin/ffmpeg-aarch64-apple-darwin
+          cp "$(node -e "process.stdout.write(require('@derhuerst/ffprobe-static'))")" src-tauri/bin/ffprobe-aarch64-apple-darwin
+          chmod +x src-tauri/bin/ffmpeg-aarch64-apple-darwin src-tauri/bin/ffprobe-aarch64-apple-darwin
+
+          file src-tauri/bin/ffmpeg-aarch64-apple-darwin
+          file src-tauri/bin/ffprobe-aarch64-apple-darwin
+          file src-tauri/bin/ffmpeg-aarch64-apple-darwin | grep -q 'arm64'
+          file src-tauri/bin/ffprobe-aarch64-apple-darwin | grep -q 'arm64'
 
       - name: Build Tauri App
         uses: tauri-apps/tauri-action@v0
