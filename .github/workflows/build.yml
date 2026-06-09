@@ -3,6 +3,9 @@ name: Build & Release
 on:
   workflow_dispatch:  # 手动触发：在 GitHub Actions 页面点 "Run workflow" 即可
 
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
@@ -72,6 +75,32 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: --target ${{ matrix.target }}
+
+      - name: Package release asset (macOS)
+        if: matrix.platform == 'macos-14'
+        run: |
+          mkdir -p release-assets
+          find "src-tauri/target/${{ matrix.target }}/release/bundle" -type f -name '*.dmg' -exec cp {} release-assets/ \;
+          ditto -c -k release-assets "DeDream-Machine-${{ matrix.label }}-${{ github.sha }}.zip"
+
+      - name: Package release asset (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-assets
+          Get-ChildItem -Path "src-tauri/target/${{ matrix.target }}/release/bundle" -Recurse -Include *.exe,*.msi | Copy-Item -Destination release-assets
+          Compress-Archive -Path "release-assets/*" -DestinationPath "DeDream-Machine-${{ matrix.label }}-${{ github.sha }}.zip" -Force
+
+      - name: Upload release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: build-${{ github.run_id }}
+          RELEASE_TITLE: DeDream Machine build ${{ github.run_id }}
+          ASSET_NAME: DeDream-Machine-${{ matrix.label }}-${{ github.sha }}.zip
+        shell: bash
+        run: |
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --target "${{ github.sha }}" --title "$RELEASE_TITLE" --notes "Automated build from workflow run ${{ github.run_id }}."
+          gh release upload "$RELEASE_TAG" "$ASSET_NAME" --clobber
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
