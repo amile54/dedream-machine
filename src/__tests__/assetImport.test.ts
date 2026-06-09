@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import defaultCapability from '../../src-tauri/capabilities/default.json';
 import { buildManualImageImportPlan, isSupportedImagePath } from '../utils/assetImport';
 
 describe('manual asset image import helpers', () => {
@@ -22,5 +23,13 @@ describe('manual asset image import helpers', () => {
     expect(plan.targetDir).toBe('/workspace/movie/assets/character/玉夫人 _ 朝服');
     expect(plan.targetPath).toBe('/workspace/movie/assets/character/玉夫人 _ 朝服/1710000000000_hero look.png');
     expect(plan.relativePath).toBe('assets/character/玉夫人 _ 朝服/1710000000000_hero look.png');
+  });
+
+  it('allows packaged builds to copy selected local images into the workspace', () => {
+    const permissionIds = defaultCapability.permissions.map(permission =>
+      typeof permission === 'string' ? permission : permission.identifier,
+    );
+
+    expect(permissionIds).toContain('fs:allow-copy-file');
   });
 });
