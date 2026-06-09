@@ -123,7 +123,7 @@ pub struct Project {
     pub updated_at: String,
 }
 
-fn read_project_json(workspace_path: &Path) -> Result<(Project, Vec<u8>), String> {
+fn read_project_json(workspace_path: &Path) -> Result<Vec<u8>, String> {
     let project_json_path = workspace_path.join("project.json");
     if !project_json_path.exists() {
         return Err("project.json not found in workspace area".into());
@@ -132,47 +132,11 @@ fn read_project_json(workspace_path: &Path) -> Result<(Project, Vec<u8>), String
     let mut f = File::open(&project_json_path).map_err(|e| e.to_string())?;
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
-    let project = serde_json::from_slice::<Project>(&buffer)
-        .map_err(|e| format!("Failed to parse project.json before export: {e}"))?;
-    Ok((project, buffer))
+    Ok(buffer)
 }
 
-fn is_valid_segment_range(segment: &Segment) -> bool {
-    segment.start_time.is_finite()
-        && segment.end_time.is_finite()
-        && segment.end_time > segment.start_time
-}
-
-fn validate_segment_clip_exports(project: &Project, workspace_path: &Path) -> Result<(), String> {
-    for segment in &project.segments {
-        if !is_valid_segment_range(segment) {
-            continue;
-        }
-
-        let clip_path = segment.clip_path.as_deref().ok_or_else(|| {
-            format!(
-                "Segment #{} is missing its exported MP4 path. Please export the package again after clip generation completes.",
-                segment.index
-            )
-        })?;
-
-        if clip_path.trim().is_empty() {
-            return Err(format!(
-                "Segment #{} has an empty exported MP4 path.",
-                segment.index
-            ));
-        }
-
-        let absolute_clip_path = workspace_path.join(clip_path);
-        if !absolute_clip_path.is_file() {
-            return Err(format!(
-                "Segment #{} exported MP4 is missing from workspace: {}",
-                segment.index, clip_path
-            ));
-        }
-    }
-
-    Ok(())
+fn should_exclude_from_export_zip(name: &str) -> bool {
+    name == "assets/segment_clips" || name.starts_with("assets/segment_clips/")
 }
 
 #[tauri::command]
@@ -282,8 +246,7 @@ async fn stream_handler(
 #[tauri::command]
 async fn export_project_zip(workspace: String, output_path: String) -> Result<(), String> {
     let workspace_path = Path::new(&workspace);
-    let (project, project_json_buffer) = read_project_json(workspace_path)?;
-    validate_segment_clip_exports(&project, workspace_path)?;
+    let project_json_buffer = read_project_json(workspace_path)?;
 
     let output_file = File::create(&output_path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipWriter::new(output_file);
@@ -305,6 +268,10 @@ async fn export_project_zip(workspace: String, output_path: String) -> Result<()
             let path = entry.path();
             let name = path.strip_prefix(workspace_path).unwrap();
             let name_str = name.to_str().unwrap().replace("\\", "/"); // Normalize to Unix separators
+
+            if should_exclude_from_export_zip(&name_str) {
+                continue;
+            }
 
             if path.is_file() {
                 zip.start_file(name_str, options).map_err(|e| e.to_string())?;
@@ -403,12 +370,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn export_zip_fails_when_declared_segment_clip_is_missing() {
+    async fn export_zip_succeeds_without_segment_clip_files_and_preserves_timing_metadata() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
-        let workspace = std::env::temp_dir().join(format!("dedream-export-missing-clip-{unique}"));
+        let workspace = std::env::temp_dir().join(format!("dedream-export-metadata-only-{unique}"));
         fs::create_dir_all(workspace.join("assets")).expect("workspace assets");
         fs::write(
             workspace.join("project.json"),
@@ -421,8 +388,7 @@ mod tests {
                 "startTime": 0,
                 "endTime": 4,
                 "description": "",
-                "category": "",
-                "clipPath": "assets/segment_clips/segment_001.mp4"
+                "category": ""
               }],
               "textBlocks": [],
               "sceneBlocks": [],
@@ -434,31 +400,39 @@ mod tests {
         .expect("project json");
 
         let output_path = workspace.join("out.zip");
-        let result = export_project_zip(
+        export_project_zip(
             workspace.to_string_lossy().to_string(),
             output_path.to_string_lossy().to_string(),
         )
-        .await;
+        .await
+        .expect("metadata-only export zip");
 
-        assert!(
-            result
-                .expect_err("missing declared segment clip should fail export")
-                .contains("assets/segment_clips/segment_001.mp4")
-        );
+        let zip_file = File::open(&output_path).expect("zip file");
+        let mut archive = ZipArchive::new(zip_file).expect("zip archive");
+        let mut project_json = String::new();
+        archive
+            .by_name("project.json")
+            .expect("project json in zip")
+            .read_to_string(&mut project_json)
+            .expect("read project json");
+        assert!(project_json.contains("\"startTime\": 0"));
+        assert!(project_json.contains("\"endTime\": 4"));
+        assert!(archive.by_name("assets/segment_clips/segment_001.mp4").is_err());
 
         fs::remove_dir_all(workspace).ok();
     }
 
     #[tokio::test]
-    async fn export_zip_includes_declared_segment_clip_file() {
+    async fn export_zip_excludes_generated_segment_clip_files() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
-        let workspace = std::env::temp_dir().join(format!("dedream-export-with-clip-{unique}"));
+        let workspace = std::env::temp_dir().join(format!("dedream-export-with-generated-clip-{unique}"));
         let clip_dir = workspace.join("assets").join("segment_clips");
         fs::create_dir_all(&clip_dir).expect("segment clip dir");
         fs::write(clip_dir.join("segment_001.mp4"), b"fake mp4 bytes").expect("clip file");
+        fs::write(workspace.join("assets").join("reference.png"), b"fake image").expect("reference image");
         fs::write(
             workspace.join("project.json"),
             r#"{
@@ -493,8 +467,9 @@ mod tests {
         let zip_file = File::open(&output_path).expect("zip file");
         let mut archive = ZipArchive::new(zip_file).expect("zip archive");
         archive
-            .by_name("assets/segment_clips/segment_001.mp4")
-            .expect("segment clip in zip");
+            .by_name("assets/reference.png")
+            .expect("reference asset in zip");
+        assert!(archive.by_name("assets/segment_clips/segment_001.mp4").is_err());
 
         fs::remove_dir_all(workspace).ok();
     }

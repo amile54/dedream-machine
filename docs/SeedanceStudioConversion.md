@@ -39,7 +39,7 @@ interface SegmentReference {
 
 `filePath` 指向某个资产里的具体图片文件，通常是 `AssetFile.type === 'screenshot'` 的文件。转换到 Studio 时，应把这些图片作为对应 clip / plot 生产时的 reference images。
 
-导出打包时，拆梦会把每个有效基础片段导出为 720p 左右的 MP4，并在 `segments[].clipPath` 记录路径：
+导出打包时，拆梦不在本机批量转码基础片段 MP4。导出包只保证每个基础片段的起止时间和标注元信息完整记录在 `segments[]` 中，Studio 转换方或后续开发机批处理应按这些时间统一切片：
 
 ```ts
 interface Segment {
@@ -50,7 +50,7 @@ interface Segment {
 }
 ```
 
-`clipPath` 是相对工作目录的路径，默认形如 `assets/segment_clips/segment_001.mp4`。zip 包会包含这些文件，Studio 转换方应按 `segments[].clipPath` 把它们登记为对应 plot / clip 的视频资产。
+`clipPath` 仅用于兼容历史或手动生成的片段视频路径。新的导出包不要求该字段存在，也不保证包含 `assets/segment_clips/*.mp4`。转换方应优先使用 `startTime` / `endTime` 从原始视频或集中式转码流程生成 Studio 需要的 Clip 素材。
 
 `SceneBlock` 结构：
 
@@ -98,7 +98,7 @@ interface SceneBlock {
 | 分场剧本 / 分场 summary | `sceneBlocks[].summary` | `project.json` |
 | 分场分镜分析 | `sceneBlocks[].detail` | `project.json` |
 | 分场素材引用 | 由 `sceneBlocks[].startSegmentIndex/endSegmentIndex` 覆盖的 `segments[].references[]` 汇总得到 | `project.json` + `assets/` 文件 |
-| 分场 clips | 由 `sceneBlocks[].startSegmentIndex/endSegmentIndex` 覆盖的 `segments[].clipPath` 汇总得到 | `project.json` + `assets/segment_clips/*.mp4` |
+| 分场 clips | 由 `sceneBlocks[].startSegmentIndex/endSegmentIndex` 覆盖的 `segments[].startTime/endTime` 批量切片得到 | `project.json` + 下游批处理生成的视频 |
 
 ### 影片 Meta
 
@@ -140,9 +140,9 @@ interface SceneBlock {
 - `local_url`: `/api/project/<project_id>/asset/<asset_id>`。
 - `duration_seconds`: `segment.endTime - segment.startTime`。
 
-拆梦导出包中已经生成的片段视频位于 `segments[].clipPath`。如果该字段存在，转换方应优先复用导出包里的 MP4，不需要再次切原始视频。
+拆梦导出包默认不包含这些片段视频。转换方应使用 `segment.startTime` / `segment.endTime` 从原始视频或统一素材服务批量生成 MP4；如果历史项目中 `segments[].clipPath` 已存在且文件也在导出包内，可以作为兼容路径复用。
 
-拆梦的 clip 导出服务支持可选的转码参数，转换方可以使用 720p 左右的低成本素材：
+拆梦仍保留 clip 导出服务，供手动截片段或后续批处理复用。转换方可以使用 720p 左右的低成本素材：
 
 ```ts
 exportClip(input, start, end, output, false, fps, {

@@ -5,10 +5,7 @@ import { SegmentList } from '../segments/SegmentList';
 import { TextBlocks } from '../analysis/TextBlocks';
 import { AssetSidebar } from '../assets/AssetSidebar';
 import { useProjectStore } from '../../stores/projectStore';
-import { useVideoStore } from '../../stores/videoStore';
 import { useKeyboardShortcuts } from '../../utils/shortcuts';
-import { exportProjectSegmentsAsClips } from '../../utils/exportSegments';
-import { resolveWorkspacePath } from '../../stores/projectStore';
 import Split from 'react-split';
 import './MainLayout.css';
 
@@ -21,9 +18,11 @@ export const MainLayout: React.FC = () => {
     const switchProject = useProjectStore(s => s.switchProject);
     const activeAssetId = useProjectStore(s => s.activeAssetId);
     const exitSubProject = useProjectStore(s => s.exitSubProject);
-    const fps = useVideoStore(s => s.fps);
 
     const [isAssetSidebarOpen, setIsAssetSidebarOpen] = useState(true);
+    const [exportStatus, setExportStatus] = useState<string | null>(null);
+
+    const isExporting = exportStatus !== null;
 
     useKeyboardShortcuts();
 
@@ -73,8 +72,10 @@ export const MainLayout: React.FC = () => {
                     {isDirty && <span className="unsaved-badge">●</span>}
                     <button
                         className="save-btn"
+                        disabled={isExporting}
                         onClick={async () => {
-                            if (!workspace) return;
+                            if (!workspace || isExporting) return;
+                            setExportStatus('请选择导出保存位置...');
                             try {
                                 const { save } = await import('@tauri-apps/plugin-dialog');
                                 const { invoke } = await import('@tauri-apps/api/core');
@@ -91,36 +92,27 @@ export const MainLayout: React.FC = () => {
 
                                 if (!destPath) return;
 
-                                if (!project) return;
-                                const sourceVideoPath = resolveWorkspacePath(workspace, project.videoFilePath);
-                                if (!sourceVideoPath) {
-                                    throw new Error('缺少原始视频路径，无法导出片段 MP4');
-                                }
-
-                                const projectWithSegmentClips = await exportProjectSegmentsAsClips({
-                                    project,
-                                    workspace,
-                                    sourceVideoPath,
-                                    fps: fps || 24,
-                                });
-                                useProjectStore.setState({ project: projectWithSegmentClips, isDirty: true });
-
+                                setExportStatus('正在保存项目元信息...');
                                 await useProjectStore.getState().saveProject();
 
+                                setExportStatus('正在写入 zip 数据包...');
                                 await invoke('export_project_zip', {
                                     workspace: workspace,
                                     outputPath: destPath
                                 });
 
+                                setExportStatus('导出完成');
                                 alert(`导出成功！\n已将项目数据与资产打包保存至:\n${destPath}`);
                             } catch (err) {
                                 console.error('Export failed:', err);
                                 alert(`导出失败: ${err}`);
+                            } finally {
+                                setExportStatus(null);
                             }
                         }}
                         title="导出项目打包文件 (只包含数据与截图，不含原视频)"
                     >
-                        📦 导出打包
+                        {isExporting ? '📦 导出中...' : '📦 导出打包'}
                     </button>
                     <button className="save-btn" onClick={saveProject} title="保存 (Cmd+S)">
                         💾 保存
@@ -137,6 +129,17 @@ export const MainLayout: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {exportStatus && (
+                <div className="export-progress-panel" role="status" aria-live="polite">
+                    <div className="export-progress-spinner" />
+                    <div>
+                        <div className="export-progress-title">正在导出</div>
+                        <div className="export-progress-message">{exportStatus}</div>
+                        <div className="export-progress-hint">当前导出只打包项目元信息和已有资产，不会在本机切分片段 MP4。</div>
+                    </div>
+                </div>
+            )}
 
             <div className="layout-content">
                 <div
