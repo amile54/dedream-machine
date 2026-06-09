@@ -529,6 +529,7 @@ export const VideoPlayer: React.FC = () => {
                             category: '',
                         }],
                         textBlocks: [],
+                        sceneBlocks: [],
                         assets: [],
                         createdAt: now,
                         updatedAt: now,

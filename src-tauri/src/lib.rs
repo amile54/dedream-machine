@@ -7,6 +7,14 @@ use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SegmentReference {
+    #[serde(rename = "assetId")]
+    pub asset_id: String,
+    #[serde(rename = "filePath")]
+    pub file_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Segment {
     pub id: String,
     pub index: i32,
@@ -16,6 +24,10 @@ pub struct Segment {
     pub end_time: f64,
     pub description: String,
     pub category: String,
+    #[serde(default)]
+    pub references: Vec<SegmentReference>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "clipPath")]
+    pub clip_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "isCutError")]
     pub is_cut_error: Option<bool>,
 }
@@ -29,6 +41,25 @@ pub struct TextBlock {
     pub block_type: String,
     #[serde(rename = "sortOrder")]
     pub sort_order: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SceneBlock {
+    pub id: String,
+    #[serde(rename = "sceneInfo")]
+    pub scene_info: String,
+    #[serde(rename = "startSegmentIndex")]
+    pub start_segment_index: i32,
+    #[serde(rename = "endSegmentIndex")]
+    pub end_segment_index: i32,
+    pub summary: String,
+    pub detail: String,
+    #[serde(rename = "sortOrder")]
+    pub sort_order: i32,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -48,6 +79,8 @@ pub struct AssetFile {
     pub timestamp: Option<f64>,
     #[serde(rename = "type")]
     pub file_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -57,6 +90,8 @@ pub struct Asset {
     pub category: String,
     #[serde(default)]
     pub description: String,
+    #[serde(default)]
+    pub detail: String,
     #[serde(default, rename = "createdAt")]
     pub created_at: String,
     #[serde(default)]
@@ -76,6 +111,8 @@ pub struct Project {
     pub segments: Vec<Segment>,
     #[serde(rename = "textBlocks")]
     pub text_blocks: Vec<TextBlock>,
+    #[serde(default, rename = "sceneBlocks")]
+    pub scene_blocks: Vec<SceneBlock>,
     #[serde(default)]
     pub assets: Vec<Asset>,
     #[serde(rename = "subtitleFilePath")]
@@ -143,7 +180,8 @@ fn get_files_in_dir(dir_path: String) -> Result<Vec<String>, String> {
 
 use axum::{
     extract::{Query, Request},
-    response::IntoResponse,
+    http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN},
+    response::{IntoResponse, Response},
     routing::get,
     Router,
 };
@@ -152,6 +190,12 @@ use tower::ServiceExt;
 use tower_http::services::ServeFile;
 
 static SERVER_PORT: AtomicU16 = AtomicU16::new(0);
+
+fn add_stream_cors_headers(response: &mut Response) {
+    response
+        .headers_mut()
+        .insert(ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+}
 
 #[derive(Deserialize)]
 struct VideoQuery {
@@ -173,9 +217,14 @@ fn get_stream_url(file_path: String) -> Result<String, String> {
 async fn stream_handler(
     Query(q): Query<VideoQuery>,
     req: Request,
-) -> impl IntoResponse {
+) -> Response {
     let serve_file = ServeFile::new(q.path);
-    serve_file.oneshot(req).await
+    let mut response = serve_file.oneshot(req).await.into_response();
+    // Timeline thumbnails draw the streamed video into a canvas. In dev the app
+    // runs on localhost while media streams from 127.0.0.1, so the response must
+    // be CORS-clean or canvas extraction is blocked by the browser.
+    add_stream_cors_headers(&mut response);
+    response
 }
 
 #[tauri::command]
@@ -282,4 +331,25 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{body::Body, http::StatusCode};
+
+    #[test]
+    fn stream_responses_are_cors_clean_for_canvas_thumbnails() {
+        let mut response = Response::builder()
+            .status(StatusCode::OK)
+            .body(Body::empty())
+            .expect("response");
+
+        add_stream_cors_headers(&mut response);
+
+        assert_eq!(
+            response.headers().get(ACCESS_CONTROL_ALLOW_ORIGIN),
+            Some(&HeaderValue::from_static("*")),
+        );
+    }
 }

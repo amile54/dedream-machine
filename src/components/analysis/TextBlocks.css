@@ -71,6 +71,38 @@
     color: #fff;
 }
 
+.text-blocks-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0.45rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+.text-blocks-content::-webkit-scrollbar,
+.scene-textarea::-webkit-scrollbar,
+.scene-range-preview::-webkit-scrollbar {
+    width: 6px;
+}
+
+.text-blocks-content::-webkit-scrollbar-thumb,
+.scene-textarea::-webkit-scrollbar-thumb,
+.scene-range-preview::-webkit-scrollbar-thumb {
+    background: rgba(100, 145, 235, 0.28);
+    border-radius: 999px;
+}
+
+.text-blocks-content::-webkit-scrollbar-track,
+.scene-textarea::-webkit-scrollbar-track,
+.scene-range-preview::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.035);
+    border-radius: 999px;
+}
+
 .text-blocks-empty {
     display: flex;
     flex-direction: column;
@@ -92,24 +124,234 @@
     margin-top: 0.3rem;
 }
 
-.text-blocks-list {
+.scene-blocks-panel {
+    flex-shrink: 0;
+    padding: 0.45rem;
+    border: 1px solid rgba(255, 255, 255, 0.055);
+    border-radius: 8px;
+    background: rgba(6, 8, 20, 0.45);
+}
+
+.scene-blocks-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    margin-bottom: 0.4rem;
+}
+
+.scene-blocks-panel-header h4 {
+    margin: 0;
+    color: #d8d8f2;
+    font-size: 0.82rem;
+    font-weight: 650;
+}
+
+.scene-blocks-panel-header p {
+    margin: 0.15rem 0 0;
+    color: #666681;
+    font-size: 0.68rem;
+}
+
+.add-scene-btn {
+    flex-shrink: 0;
+    background: rgba(84, 125, 210, 0.16);
+    border: 1px solid rgba(100, 145, 235, 0.36);
+    border-radius: 6px;
+    color: #aebfff;
+    cursor: pointer;
+    font-size: 0.72rem;
+    padding: 0.28rem 0.58rem;
+    transition: all 0.18s;
+}
+
+.add-scene-btn:hover {
+    background: rgba(84, 125, 210, 0.28);
+    color: #fff;
+}
+
+.scene-blocks-empty {
+    border: 1px dashed rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    color: #555;
+    font-size: 0.74rem;
+    padding: 0.6rem;
+    text-align: center;
+}
+
+.scene-blocks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding-right: 0.1rem;
+}
+
+.scene-block {
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(100, 145, 235, 0.13);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.scene-block--expanded {
+    border-color: rgba(100, 145, 235, 0.35);
+    background: rgba(255, 255, 255, 0.055);
+}
+
+.scene-block-header {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.42rem 0.52rem;
+}
+
+.scene-block-header:hover .text-block-remove {
+    opacity: 1;
+}
+
+.scene-info-input {
     flex: 1;
-    min-height: 0;
-    max-height: 100%;
-    overflow-y: auto !important;
-    padding: 0.4rem;
+    min-width: 0;
+    background: none;
+    border: none;
+    color: #ddd;
+    font-size: 0.82rem;
+    outline: none;
+}
+
+.scene-info-input:focus {
+    color: #fff;
+}
+
+.scene-range-pill {
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    color: #8c8ca8;
+    font-size: 0.68rem;
+    padding: 0.08rem 0.42rem;
+}
+
+.scene-block-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.42rem;
+    padding: 0 0.56rem 0.58rem;
+}
+
+.scene-range-editor {
+    display: grid;
+    grid-template-columns: minmax(72px, 1fr) minmax(72px, 1fr) auto auto;
+    gap: 0.4rem;
+    align-items: end;
+}
+
+.scene-range-editor label,
+.scene-textarea-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    color: #7f7f9b;
+    font-size: 0.68rem;
+}
+
+.scene-range-editor input {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 5px;
+    color: #ddd;
+    font-size: 0.76rem;
+    padding: 0.32rem 0.4rem;
+    outline: none;
+}
+
+.scene-range-editor input:focus {
+    border-color: rgba(100, 145, 235, 0.45);
+}
+
+.scene-range-editor button {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 5px;
+    color: #a0a0c5;
+    cursor: pointer;
+    font-size: 0.7rem;
+    padding: 0.36rem 0.48rem;
+}
+
+.scene-range-editor button:hover {
+    background: rgba(100, 145, 235, 0.18);
+    color: #fff;
+}
+
+.scene-range-preview {
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    color: #777793;
+    font-size: 0.72rem;
+    max-height: 4.5rem;
+    overflow-y: auto;
+    padding: 0.36rem 0.46rem;
+}
+
+.scene-range-preview div {
+    color: #aaaacc;
+    font-size: 0.7rem;
+    margin-bottom: 0.2rem;
+}
+
+.scene-range-preview p {
+    margin: 0;
+    line-height: 1.45;
+}
+
+.scene-toggle-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.18rem;
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 5px;
+    color: #9999bd;
+    cursor: pointer;
+    font-size: 0.68rem;
+    padding: 0.2rem 0.34rem 0.2rem 0.2rem;
+    transition: background 0.18s, color 0.18s, border-color 0.18s;
+}
+
+.scene-toggle-btn:hover {
+    background: rgba(100, 145, 235, 0.18);
+    border-color: rgba(100, 145, 235, 0.3);
+    color: #fff;
+}
+
+.scene-toggle-btn .chevron-icon {
+    width: 14px;
+    height: 14px;
+}
+
+.scene-textarea {
+    resize: none;
+    overflow-y: auto;
+    min-height: 72px;
+    scrollbar-gutter: stable;
+}
+
+.scene-textarea--summary {
+    max-height: 118px;
+}
+
+.scene-textarea--detail {
+    max-height: 150px;
+}
+
+.text-blocks-list {
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
-}
-
-.text-blocks-list::-webkit-scrollbar {
-    width: 5px;
-}
-
-.text-blocks-list::-webkit-scrollbar-thumb {
-    background: rgba(100, 100, 200, 0.2);
-    border-radius: 3px;
 }
 
 .text-block {

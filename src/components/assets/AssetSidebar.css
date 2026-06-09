@@ -184,6 +184,15 @@
     padding: 0 0.5rem 0.5rem 0.5rem;
 }
 
+.asset-textarea-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    color: #8989a8;
+    font-size: 0.68rem;
+    margin-top: 0.45rem;
+}
+
 .asset-item-body textarea {
     width: 100%;
     background: rgba(0, 0, 0, 0.2);
@@ -201,6 +210,25 @@
 .asset-item-body textarea:focus {
     border-color: rgba(100, 100, 200, 0.4);
     color: #eee;
+}
+
+.import-image-btn {
+    width: 100%;
+    margin-top: 0.45rem;
+    background: rgba(100, 100, 200, 0.16);
+    border: 1px dashed rgba(130, 130, 220, 0.4);
+    color: #d7d7ff;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.74rem;
+    padding: 0.38rem 0.45rem;
+    transition: all 0.18s;
+}
+
+.import-image-btn:hover {
+    background: rgba(100, 100, 200, 0.28);
+    border-color: rgba(150, 150, 240, 0.65);
+    color: #fff;
 }
 
 .chevron-icon {
@@ -238,6 +266,12 @@
     gap: 0.2rem;
 }
 
+.asset-file-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
 .asset-file-item {
     display: flex;
     align-items: center;
@@ -258,6 +292,78 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.asset-tag-editor {
+    width: 100%;
+}
+
+.asset-tag-chip-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.22rem;
+    min-height: 28px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    padding: 0.22rem 0.28rem;
+    transition: border-color 0.16s, background 0.16s;
+}
+
+.asset-tag-chip-row:focus-within {
+    border-color: rgba(100, 100, 200, 0.48);
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.asset-tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.18rem;
+    max-width: 100%;
+    background: rgba(100, 120, 230, 0.28);
+    border: 1px solid rgba(130, 150, 255, 0.35);
+    border-radius: 5px;
+    color: #e0e4ff;
+    font-size: 0.68rem;
+    line-height: 1;
+    padding: 0.24rem 0.22rem 0.24rem 0.38rem;
+}
+
+.asset-tag-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    background: rgba(255, 255, 255, 0.12);
+    border: none;
+    border-radius: 50%;
+    color: #cfd5ff;
+    cursor: pointer;
+    font-size: 0.68rem;
+    line-height: 1;
+    padding: 0;
+}
+
+.asset-tag-remove:hover {
+    background: rgba(255, 95, 95, 0.35);
+    color: #fff;
+}
+
+.asset-tag-draft-input {
+    flex: 1;
+    min-width: 8rem;
+    background: transparent;
+    border: none;
+    color: #cfcfea;
+    font-size: 0.68rem;
+    outline: none;
+    padding: 0.18rem 0.12rem;
+}
+
+.asset-tag-draft-input::placeholder {
+    color: #666681;
 }
 
 .remove-file-btn {

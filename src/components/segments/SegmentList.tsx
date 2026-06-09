@@ -1,9 +1,15 @@
-import React, { useRef, useEffect, useCallback } from 'react';
-import { useProjectStore } from '../../stores/projectStore';
+import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import { resolveWorkspacePath, useProjectStore } from '../../stores/projectStore';
 import { useVideoStore } from '../../stores/videoStore';
 import { useTimelineStore } from '../../stores/timelineStore';
 import { formatTime } from '../../utils/timeFormat';
 import { SEGMENT_CATEGORIES } from '../../types';
+import type { Asset, SegmentReference } from '../../types';
+import { collectReferenceImageOptions } from '../../utils/segmentReferences';
+import { takeScreenshot } from '../../services/ffmpegService';
+import { invoke } from '@tauri-apps/api/core';
+import { join } from '@tauri-apps/api/path';
+import { open } from '@tauri-apps/plugin-dialog';
 import './SegmentList.css';
 
 /** Auto-expanding textarea with custom resize handle.
@@ -84,14 +90,24 @@ const AutoTextarea: React.FC<{
 
 export const SegmentList: React.FC = () => {
     const project = useProjectStore(s => s.project);
+    const workspace = useProjectStore(s => s.workspace);
     const updateSegment = useProjectStore(s => s.updateSegment);
+    const addSegmentReference = useProjectStore(s => s.addSegmentReference);
+    const removeSegmentReference = useProjectStore(s => s.removeSegmentReference);
+    const addFileToAsset = useProjectStore(s => s.addFileToAsset);
     const removeCutPoint = useProjectStore(s => s.removeCutPoint);
     const seekTo = useVideoStore(s => s.seekTo);
+    const currentTime = useVideoStore(s => s.currentTime);
     const selectedSegmentId = useTimelineStore(s => s.selectedSegmentId);
     const setSelectedSegmentId = useTimelineStore(s => s.setSelectedSegmentId);
 
     const listRef = useRef<HTMLDivElement>(null);
     const segments = project?.segments || [];
+    const referenceOptions = useMemo(
+        () => collectReferenceImageOptions(project?.assets || []),
+        [project?.assets],
+    );
+    const screenshotTargetAssets = (project?.assets || []).filter(asset => asset.category !== 'segment_analysis');
 
     // Auto-scroll to selected segment
     useEffect(() => {
@@ -106,6 +122,63 @@ export const SegmentList: React.FC = () => {
     const handleSegmentClick = (segId: string, startTime: number) => {
         setSelectedSegmentId(segId);
         seekTo(startTime);
+    };
+
+    const streamUrlForPath = async (filePath: string): Promise<string> => {
+        const absolutePath = resolveWorkspacePath(workspace, filePath);
+        return await invoke<string>('get_stream_url', { filePath: absolutePath });
+    };
+
+    const ensureOriginalVideoPath = async (): Promise<string | null> => {
+        if (!workspace || !project?.videoFilePath) return null;
+
+        const candidate = resolveWorkspacePath(workspace, project.videoFilePath);
+        const exists = await invoke<boolean>('check_file_exists', { path: candidate });
+        if (exists) return candidate;
+
+        const file = await open({
+            multiple: false,
+            title: '重新关联原始视频',
+            filters: [{
+                name: '视频文件',
+                extensions: ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'm4v'],
+            }],
+        });
+        if (!file) return null;
+        const newPath = file as string;
+        const store = useProjectStore.getState();
+        if (store.project) {
+            store.setProject({ ...store.project, videoFilePath: newPath });
+            await store.saveProject();
+        }
+        return newPath;
+    };
+
+    const handleCaptureReference = async (segmentId: string, targetAssetId: string) => {
+        if (!workspace || !project || !targetAssetId) return;
+        const targetAsset = project.assets.find(asset => asset.id === targetAssetId);
+        if (!targetAsset) return;
+
+        const originalVideoPath = await ensureOriginalVideoPath();
+        if (!originalVideoPath) return;
+
+        const timestamp = currentTime;
+        const filename = `${targetAsset.name}_ref_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+        const pathParts = ['assets', targetAsset.category, targetAsset.name];
+        const outputPath = await join(workspace, ...pathParts, filename);
+        await takeScreenshot(originalVideoPath, timestamp, outputPath);
+
+        const relativePath = [...pathParts, filename].join('/');
+        addFileToAsset(targetAsset.id, {
+            path: relativePath,
+            timestamp,
+            type: 'screenshot',
+            tags: [],
+        });
+        addSegmentReference(segmentId, {
+            assetId: targetAsset.id,
+            filePath: relativePath,
+        });
     };
 
     if (segments.length === 0) {
@@ -185,10 +258,180 @@ export const SegmentList: React.FC = () => {
                                     </button>
                                 )}
                             </div>
+                            <SegmentReferencePanel
+                                segmentId={seg.id}
+                                references={seg.references || []}
+                                options={referenceOptions}
+                                targetAssets={screenshotTargetAssets}
+                                onAddReference={(reference) => addSegmentReference(seg.id, reference)}
+                                onRemoveReference={(filePath) => removeSegmentReference(seg.id, filePath)}
+                                onCaptureReference={(assetId) => handleCaptureReference(seg.id, assetId)}
+                                getPreviewUrl={streamUrlForPath}
+                            />
                         </div>
                     </div>
                 ))}
             </div>
+        </div>
+    );
+};
+
+interface SegmentReferencePanelProps {
+    segmentId: string;
+    references: SegmentReference[];
+    options: ReturnType<typeof collectReferenceImageOptions>;
+    targetAssets: Asset[];
+    onAddReference: (reference: SegmentReference) => void;
+    onRemoveReference: (filePath: string) => void;
+    onCaptureReference: (assetId: string) => void;
+    getPreviewUrl: (filePath: string) => Promise<string>;
+}
+
+const SegmentReferencePanel: React.FC<SegmentReferencePanelProps> = ({
+    segmentId,
+    references,
+    options,
+    targetAssets,
+    onAddReference,
+    onRemoveReference,
+    onCaptureReference,
+    getPreviewUrl,
+}) => {
+    const [selectedOptionPath, setSelectedOptionPath] = useState('');
+    const [captureAssetId, setCaptureAssetId] = useState(targetAssets[0]?.id || '');
+    const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+
+    useEffect(() => {
+        if (!captureAssetId && targetAssets[0]) {
+            setCaptureAssetId(targetAssets[0].id);
+        }
+    }, [captureAssetId, targetAssets]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const imagePaths = new Set([
+            ...references.map(ref => ref.filePath),
+            ...options.slice(0, 24).map(option => option.filePath),
+        ]);
+
+        imagePaths.forEach(filePath => {
+            if (previewUrls[filePath]) return;
+            getPreviewUrl(filePath)
+                .then(url => {
+                    if (!cancelled) {
+                        setPreviewUrls(prev => ({ ...prev, [filePath]: url }));
+                    }
+                })
+                .catch(() => {
+                    /* Preview failures should not block annotation work. */
+                });
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [references, options, previewUrls, getPreviewUrl, segmentId]);
+
+    const selectedOption = options.find(option => option.filePath === selectedOptionPath);
+    const linkedOptions = references
+        .map(ref => options.find(option => option.filePath === ref.filePath) || {
+            ...ref,
+            assetName: '未知资产',
+            tags: [],
+            label: ref.filePath.split('/').pop() || ref.filePath,
+        });
+
+    return (
+        <div className="segment-reference-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="segment-reference-header">
+                <span>参考素材</span>
+                <span>{references.length}</span>
+            </div>
+
+            <div className="segment-reference-picker">
+                <select
+                    value={selectedOptionPath}
+                    onChange={(e) => setSelectedOptionPath(e.target.value)}
+                    title="选择已有资产图片"
+                >
+                    <option value="">选择已有图片...</option>
+                    {options.map(option => (
+                        <option key={option.filePath} value={option.filePath}>
+                            {option.label}
+                        </option>
+                    ))}
+                </select>
+                <button
+                    type="button"
+                    disabled={!selectedOption}
+                    onClick={() => {
+                        if (!selectedOption) return;
+                        onAddReference({
+                            assetId: selectedOption.assetId,
+                            filePath: selectedOption.filePath,
+                        });
+                        setSelectedOptionPath('');
+                    }}
+                >
+                    挂载
+                </button>
+            </div>
+
+            {selectedOption && (
+                <div className="segment-reference-selected-preview">
+                    {previewUrls[selectedOption.filePath] ? (
+                        <img src={previewUrls[selectedOption.filePath]} alt={selectedOption.label} />
+                    ) : (
+                        <div className="segment-reference-thumb-placeholder">预览中</div>
+                    )}
+                    <span>{selectedOption.label}</span>
+                </div>
+            )}
+
+            <div className="segment-reference-capture">
+                <select
+                    value={captureAssetId}
+                    onChange={(e) => setCaptureAssetId(e.target.value)}
+                    title="截图保存到哪个资产"
+                >
+                    {targetAssets.length === 0 ? (
+                        <option value="">先创建资产</option>
+                    ) : targetAssets.map(asset => (
+                        <option key={asset.id} value={asset.id}>
+                            截图到：{asset.name}
+                        </option>
+                    ))}
+                </select>
+                <button
+                    type="button"
+                    disabled={!captureAssetId}
+                    onClick={() => onCaptureReference(captureAssetId)}
+                    title="截取当前画面并挂载为参考"
+                >
+                    +
+                </button>
+            </div>
+
+            {linkedOptions.length > 0 && (
+                <div className="segment-reference-grid">
+                    {linkedOptions.map(ref => (
+                        <div key={ref.filePath} className="segment-reference-card" title={ref.label}>
+                            {previewUrls[ref.filePath] ? (
+                                <img src={previewUrls[ref.filePath]} alt={ref.label} />
+                            ) : (
+                                <div className="segment-reference-thumb-placeholder">预览中</div>
+                            )}
+                            <div className="segment-reference-caption">{ref.assetName}</div>
+                            <button
+                                type="button"
+                                onClick={() => onRemoveReference(ref.filePath)}
+                                title="移除此参考"
+                            >
+                                ×
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 };

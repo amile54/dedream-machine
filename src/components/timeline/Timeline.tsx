@@ -679,6 +679,7 @@ export const Timeline: React.FC = () => {
                         <video
                             ref={thumbVideoRef}
                             src={proxyUrl}
+                            crossOrigin="anonymous"
                             muted
                             playsInline
                             style={{ display: 'none' }}
@@ -690,6 +691,7 @@ export const Timeline: React.FC = () => {
                         <video
                             ref={extractVideoRef}
                             src={proxyUrl}
+                            crossOrigin="anonymous"
                             muted
                             playsInline
                             style={{ display: 'none' }}

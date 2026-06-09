@@ -43,6 +43,7 @@ beforeEach(() => {
       subtitleFilePath: undefined,
       segments: [],
       textBlocks: [],
+      sceneBlocks: [],
       assets: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

@@ -28,6 +28,90 @@ export interface AudioTrackInfo {
     channels: number;     // e.g. 2, 6
 }
 
+export type ExportClipQuality = 'high' | 'balanced' | 'small';
+
+export interface ExportClipOptions {
+    /**
+     * Downscale to this max height while preserving aspect ratio.
+     * Smaller source videos are not upscaled.
+     */
+    maxHeight?: number;
+    quality?: ExportClipQuality;
+}
+
+interface BuildExportClipArgsParams {
+    inputPath: string;
+    startTime: number;
+    endTime: number;
+    outputPath: string;
+    isAudio?: boolean;
+    fps?: number;
+    options?: ExportClipOptions;
+}
+
+function crfForQuality(quality: ExportClipQuality | undefined): string {
+    if (quality === 'high') return '22';
+    if (quality === 'small') return '30';
+    if (quality === 'balanced') return '26';
+    return '18';
+}
+
+export function buildExportClipArgs({
+    inputPath,
+    startTime,
+    endTime,
+    outputPath,
+    isAudio,
+    fps = 24,
+    options,
+}: BuildExportClipArgsParams): string[] {
+    const duration = Math.max(0, endTime - startTime);
+
+    if (isAudio) {
+        return [
+            '-v', 'warning',
+            '-ss', startTime.toString(),
+            '-i', inputPath,
+            '-t', duration.toString(),
+            '-map', '0:a:0',
+            '-vn',
+            '-c:a', 'aac',
+            '-b:a', '192k',
+            '-y',
+            outputPath,
+        ];
+    }
+
+    // SEMANTIC CONTRACT: `endTime` is the EXCLUSIVE endpoint — it represents the first frame
+    // of the NEXT segment (by design, the playhead at a cut point shows the next segment's frame).
+    const oneFrame = 1.0 / (fps || 24);
+    const safeDuration = Math.max(0, duration - oneFrame);
+    const args = [
+        '-v', 'warning',
+        '-ss', startTime.toString(),
+        '-i', inputPath,
+        '-t', safeDuration.toString(),
+        '-map', '0:v:0',
+        '-map', '0:a:0?',
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-crf', crfForQuality(options?.quality),
+    ];
+
+    if (options?.maxHeight && Number.isFinite(options.maxHeight) && options.maxHeight > 0) {
+        const maxHeight = Math.round(options.maxHeight);
+        args.push('-vf', `scale=-2:min(${maxHeight}\\,ih)`);
+    }
+
+    args.push(
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        '-y',
+        outputPath,
+    );
+    return args;
+}
+
 /**
  * Detect embedded subtitle tracks in a video file using FFprobe
  */
@@ -349,57 +433,20 @@ export async function exportClip(
     endTime: number,
     outputPath: string,
     isAudio?: boolean,
-    fps: number = 24
+    fps: number = 24,
+    options?: ExportClipOptions,
 ): Promise<void> {
     await ensureDirForFile(outputPath);
 
-    // Exact full duration
-    const duration = Math.max(0, endTime - startTime);
-
-    // SEMANTIC CONTRACT: `endTime` is the EXCLUSIVE endpoint — it represents the first frame
-    // of the NEXT segment (by design, the playhead at a cut point shows the next segment's frame).
-    // Therefore the clip must contain frames in [startTime, endTime) — never including the endTime frame.
-    //
-    // We subtract exactly one full frame from the duration. This gives FFmpeg enough margin so that
-    // any internal PTS rounding during H.264 encoding never captures the forbidden boundary frame.
-    // (Half-frame was insufficient because FFmpeg can round up to the nearest decodable PTS.)
-    const oneFrame = 1.0 / (fps || 24);
-    const safeDuration = Math.max(0, duration - oneFrame);
-
-    // We must re-encode (transcode) rather than use `-c copy` to guarantee frame-level accuracy.
-    // Stream copy (-c copy) operates on GOP keyframes, which causes clips to snap to the nearest keyframe 
-    // instead of the user's exact cut point, introducing multiple frames of bleeding.
-    // Using ultrafast libx264 with crf 18 ensures visually lossless quality and executes very quickly.
-    let ffmpegArgs = [
-        '-v', 'warning',
-        '-ss', startTime.toString(),
-        '-i', inputPath,
-        '-t', safeDuration.toString(),
-        '-map', '0:v:0',    // first video stream
-        '-map', '0:a:0?',   // first audio stream (optional)
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-crf', '18',
-        '-c:a', 'aac',
-        '-b:a', '192k',
-        '-y',
+    const ffmpegArgs = buildExportClipArgs({
+        inputPath,
+        startTime,
+        endTime,
         outputPath,
-    ];
-
-    if (isAudio) {
-        ffmpegArgs = [
-            '-v', 'warning',
-            '-ss', startTime.toString(),
-            '-i', inputPath,
-            '-t', duration.toString(),
-            '-map', '0:a:0',
-            '-vn',
-            '-c:a', 'aac',
-            '-b:a', '192k',
-            '-y',
-            outputPath,
-        ];
-    }
+        isAudio,
+        fps,
+        options,
+    });
 
     const cmd = Command.sidecar('bin/ffmpeg', ffmpegArgs);
     const output = await cmd.execute();

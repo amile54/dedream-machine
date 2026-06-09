@@ -1,5 +1,10 @@
 // === Data Types for DeDream Machine ===
 
+export interface SegmentReference {
+  assetId: string;
+  filePath: string; // relative workspace path to a concrete reference image
+}
+
 export interface Segment {
   id: string;
   index: number;
@@ -8,10 +13,15 @@ export interface Segment {
   description: string;
   category: string;
   notes?: string;
+  references?: SegmentReference[];
+  clipPath?: string; // exported dataset clip path, relative to workspace
   isCutError?: boolean;
 }
 
 export type TextBlockType =
+  | 'screenplay'
+  | 'movieMeta'
+  | 'userPrompt'
   | 'subplot'
   | 'mainPlot'
   | 'act'
@@ -26,6 +36,18 @@ export interface TextBlock {
   sortOrder: number;
 }
 
+export interface SceneBlock {
+  id: string;
+  sceneInfo: string;          // user-entered scene number / basic info
+  startSegmentIndex: number;  // inclusive segment index
+  endSegmentIndex: number;    // inclusive segment index
+  summary: string;            // Studio context-like scene summary
+  detail: string;             // reference answer, not imported into Studio Project Context
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type AssetCategory =
   | 'character'
   | 'scene'
@@ -38,13 +60,15 @@ export interface AssetFile {
   path: string;          // relative to workspace
   timestamp?: number;    // video time where this was captured
   type: 'screenshot' | 'clip' | 'audio';
+  tags?: string[];       // per-file visual labels, e.g. costume/look tags
 }
 
 export interface Asset {
   id: string;
   name: string;
   category: AssetCategory;
-  description: string;
+  description: string; // Summary, can be used as Studio context
+  detail?: string;     // reference answer, not imported into Studio Project Context
   createdAt: string;
   files: AssetFile[];
   subProjectData?: Project; // Nested analysis project data
@@ -60,6 +84,7 @@ export interface Project {
   proxyFilePath?: string;
   segments: Segment[];
   textBlocks: TextBlock[];
+  sceneBlocks: SceneBlock[];
   assets: Asset[];
   subtitleFilePath?: string;
   createdAt: string;
@@ -74,6 +99,9 @@ export interface SubtitleCue {
 }
 
 export const TEXT_BLOCK_TYPE_LABELS: Record<TextBlockType, string> = {
+  screenplay: '剧本全文',
+  movieMeta: '影片 Meta',
+  userPrompt: '题目 / User Prompt',
   subplot: '小情节',
   mainPlot: '大情节',
   act: '幕',

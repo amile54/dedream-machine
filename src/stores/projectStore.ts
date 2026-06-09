@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import type { Project, Segment, TextBlock, TextBlockType, Asset, AssetCategory, AssetFile } from '../types';
+import type { Project, Segment, SegmentReference, TextBlock, TextBlockType, SceneBlock, Asset, AssetCategory, AssetFile } from '../types';
 import { invoke } from '@tauri-apps/api/core';
 import { snapToFrame } from '../utils/frameUtils';
 import { useVideoStore } from './videoStore';
@@ -35,12 +35,24 @@ function normalizeToPortablePath(workspace: string, filepath: string | undefined
     return relative.replace(/\\/g, '/');
 }
 
+function normalizeSegmentPaths(workspace: string, segments: Segment[]): Segment[] {
+    return (segments || []).map(segment => ({
+        ...segment,
+        clipPath: normalizeToPortablePath(workspace, segment.clipPath) || segment.clipPath,
+        references: (segment.references || []).map(reference => ({
+            ...reference,
+            filePath: normalizeToPortablePath(workspace, reference.filePath) || reference.filePath,
+        })),
+    }));
+}
+
 export function serializeProjectPaths(project: Project, workspace: string): Project {
     return {
         ...project,
         videoFilePath: normalizeToPortablePath(workspace, project.videoFilePath) || project.videoFilePath,
         proxyFilePath: normalizeToPortablePath(workspace, project.proxyFilePath),
         subtitleFilePath: normalizeToPortablePath(workspace, project.subtitleFilePath),
+        segments: normalizeSegmentPaths(workspace, project.segments || []),
         assets: (project.assets || []).map(asset => ({
             ...asset,
             files: (asset.files || []).map(file => ({
@@ -78,6 +90,7 @@ export function repairLoadedProjectPaths(project: Project, workspace: string): P
 
         return {
             ...asset,
+            detail: asset.detail || '',
             files: repairedFiles,
             subProjectData: repairedSubProject,
         };
@@ -88,6 +101,8 @@ export function repairLoadedProjectPaths(project: Project, workspace: string): P
         videoFilePath: normalizeToPortablePath(workspace, project.videoFilePath) || project.videoFilePath,
         proxyFilePath: normalizeToPortablePath(workspace, project.proxyFilePath),
         subtitleFilePath: normalizeToPortablePath(workspace, project.subtitleFilePath),
+        segments: normalizeSegmentPaths(workspace, project.segments || []),
+        sceneBlocks: project.sceneBlocks || [],
         assets: repairedAssets,
     };
 }
@@ -111,6 +126,8 @@ interface ProjectState {
     removeCutPoint: (segmentIndex: number) => void;
     moveCutPoint: (cutPointIndex: number, newTime: number) => void;
     updateSegment: (id: string, updates: Partial<Segment>) => void;
+    addSegmentReference: (segmentId: string, reference: SegmentReference) => void;
+    removeSegmentReference: (segmentId: string, filePath: string) => void;
     undoSegments: () => void;
     pushUndoSnapshot: () => void;
 
@@ -119,11 +136,17 @@ interface ProjectState {
     updateTextBlock: (id: string, updates: Partial<TextBlock>) => void;
     removeTextBlock: (id: string) => void;
 
+    // SceneBlock operations
+    addSceneBlock: () => void;
+    updateSceneBlock: (id: string, updates: Partial<SceneBlock>) => void;
+    removeSceneBlock: (id: string) => void;
+
     // Asset operations
     addAsset: (category: AssetCategory, name: string) => void;
     updateAsset: (id: string, updates: Partial<Asset>) => void;
     removeAsset: (id: string) => void;
     addFileToAsset: (assetId: string, file: AssetFile) => void;
+    updateAssetFile: (assetId: string, filePath: string, updates: Partial<AssetFile>) => void;
     removeAssetFile: (assetId: string, filePath: string) => void;
 
     // Sub-Project Nested Asset operations (for Segment Analysis)
@@ -188,6 +211,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             videoFilePath,
             segments: [],
             textBlocks: [],
+            sceneBlocks: [],
             assets: [],
             createdAt: now,
             updatedAt: now,
@@ -240,6 +264,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
                 newSeg.description = oldSeg.description;
                 newSeg.category = oldSeg.category;
                 newSeg.notes = oldSeg.notes;
+                newSeg.references = oldSeg.references;
                 newSeg.id = oldSeg.id;
             }
         });
@@ -272,6 +297,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
                 newSeg.description = oldSeg.description;
                 newSeg.category = oldSeg.category;
                 newSeg.notes = oldSeg.notes;
+                newSeg.references = oldSeg.references;
                 newSeg.id = oldSeg.id;
             }
         });
@@ -311,6 +337,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
                 newSeg.description = oldSegments[i].description;
                 newSeg.category = oldSegments[i].category;
                 newSeg.notes = oldSegments[i].notes;
+                newSeg.references = oldSegments[i].references;
                 newSeg.id = oldSegments[i].id; // Keep same UUID to avoid React re-mounts
             }
         });
@@ -336,6 +363,43 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         const segments = project.segments.map(s =>
             s.id === id ? { ...s, ...updates } : s
         );
+
+        set({
+            project: { ...project, segments, updatedAt: new Date().toISOString() },
+            isDirty: true,
+        });
+    },
+
+    addSegmentReference: (segmentId, reference) => {
+        const { project } = get();
+        if (!project) return;
+
+        const segments = project.segments.map(segment => {
+            if (segment.id !== segmentId) return segment;
+            const references = segment.references || [];
+            if (references.some(ref => ref.filePath === reference.filePath)) {
+                return segment;
+            }
+            return { ...segment, references: [...references, reference] };
+        });
+
+        set({
+            project: { ...project, segments, updatedAt: new Date().toISOString() },
+            isDirty: true,
+        });
+    },
+
+    removeSegmentReference: (segmentId, filePath) => {
+        const { project } = get();
+        if (!project) return;
+
+        const segments = project.segments.map(segment => {
+            if (segment.id !== segmentId) return segment;
+            return {
+                ...segment,
+                references: (segment.references || []).filter(ref => ref.filePath !== filePath),
+            };
+        });
 
         set({
             project: { ...project, segments, updatedAt: new Date().toISOString() },
@@ -407,6 +471,64 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         });
     },
 
+    addSceneBlock: () => {
+        const { project } = get();
+        if (!project) return;
+
+        const sceneBlocks = project.sceneBlocks || [];
+        const now = new Date().toISOString();
+        const defaultSegmentIndex = project.segments[0]?.index || 1;
+        const newScene: SceneBlock = {
+            id: uuidv4(),
+            sceneInfo: `第 ${sceneBlocks.length + 1} 场`,
+            startSegmentIndex: defaultSegmentIndex,
+            endSegmentIndex: defaultSegmentIndex,
+            summary: '',
+            detail: '',
+            sortOrder: sceneBlocks.length,
+            createdAt: now,
+            updatedAt: now,
+        };
+
+        set({
+            project: {
+                ...project,
+                sceneBlocks: [...sceneBlocks, newScene],
+                updatedAt: now,
+            },
+            isDirty: true,
+        });
+    },
+
+    updateSceneBlock: (id, updates) => {
+        const { project } = get();
+        if (!project) return;
+
+        const now = new Date().toISOString();
+        const sceneBlocks = (project.sceneBlocks || []).map(scene =>
+            scene.id === id ? { ...scene, ...updates, updatedAt: now } : scene
+        );
+
+        set({
+            project: { ...project, sceneBlocks, updatedAt: now },
+            isDirty: true,
+        });
+    },
+
+    removeSceneBlock: (id) => {
+        const { project } = get();
+        if (!project) return;
+
+        const sceneBlocks = (project.sceneBlocks || [])
+            .filter(scene => scene.id !== id)
+            .map((scene, i) => ({ ...scene, sortOrder: i }));
+
+        set({
+            project: { ...project, sceneBlocks, updatedAt: new Date().toISOString() },
+            isDirty: true,
+        });
+    },
+
     addAsset: (category, name) => {
         const { project } = get();
         if (!project) return;
@@ -416,6 +538,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             name,
             category,
             description: '',
+            detail: '',
             createdAt: new Date().toISOString(),
             files: [],
         };
@@ -491,6 +614,26 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         });
     },
 
+    updateAssetFile: (assetId, filePath, updates) => {
+        const { project } = get();
+        if (!project) return;
+
+        const assets = (project.assets || []).map(a => {
+            if (a.id !== assetId) return a;
+            return {
+                ...a,
+                files: (a.files || []).map(file =>
+                    file.path === filePath ? { ...file, ...updates } : file
+                ),
+            };
+        });
+
+        set({
+            project: { ...project, assets, updatedAt: new Date().toISOString() },
+            isDirty: true,
+        });
+    },
+
     addSubProjectAsset: (parentAssetId, category, name) => {
         const { project } = get();
         if (!project) return;
@@ -500,6 +643,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             name,
             category,
             description: '',
+            detail: '',
             createdAt: new Date().toISOString(),
             files: [],
         };
@@ -512,6 +656,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
                     videoFilePath: '',
                     segments: [],
                     textBlocks: [],
+                    sceneBlocks: [],
                     assets: [],
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString()

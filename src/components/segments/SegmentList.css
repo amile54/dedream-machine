@@ -255,3 +255,171 @@
     opacity: 1;
     background: rgba(255, 80, 80, 0.15);
 }
+
+.segment-reference-panel {
+    margin-top: 0.1rem;
+    padding: 0.42rem;
+    background: rgba(0, 0, 0, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.055);
+    border-radius: 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.36rem;
+}
+
+.segment-reference-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #8585a8;
+    font-size: 0.68rem;
+    letter-spacing: 0.02em;
+}
+
+.segment-reference-header span:last-child {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    color: #aaaaca;
+    padding: 0.04rem 0.36rem;
+}
+
+.segment-reference-picker,
+.segment-reference-capture {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.28rem;
+}
+
+.segment-reference-picker select,
+.segment-reference-capture select {
+    min-width: 0;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 5px;
+    color: #aaa;
+    font-size: 0.7rem;
+    padding: 0.28rem 0.4rem;
+    outline: none;
+}
+
+.segment-reference-picker select:focus,
+.segment-reference-capture select:focus {
+    border-color: rgba(100, 100, 200, 0.4);
+}
+
+.segment-reference-picker button,
+.segment-reference-capture button {
+    background: rgba(90, 100, 210, 0.16);
+    border: 1px solid rgba(110, 120, 230, 0.3);
+    border-radius: 5px;
+    color: #b9bcff;
+    cursor: pointer;
+    font-size: 0.72rem;
+    padding: 0.28rem 0.46rem;
+}
+
+.segment-reference-picker button:disabled,
+.segment-reference-capture button:disabled {
+    cursor: not-allowed;
+    opacity: 0.35;
+}
+
+.segment-reference-picker button:not(:disabled):hover,
+.segment-reference-capture button:not(:disabled):hover {
+    background: rgba(90, 100, 210, 0.32);
+    color: #fff;
+}
+
+.segment-reference-selected-preview {
+    display: grid;
+    grid-template-columns: 54px minmax(0, 1fr);
+    align-items: center;
+    gap: 0.4rem;
+    background: rgba(255, 255, 255, 0.025);
+    border-radius: 5px;
+    color: #8f8faa;
+    font-size: 0.68rem;
+    padding: 0.28rem;
+}
+
+.segment-reference-selected-preview img,
+.segment-reference-card img,
+.segment-reference-thumb-placeholder {
+    width: 54px;
+    height: 38px;
+    object-fit: cover;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.segment-reference-selected-preview span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.segment-reference-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+    gap: 0.32rem;
+}
+
+.segment-reference-card {
+    position: relative;
+    min-width: 0;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    padding: 0.24rem;
+}
+
+.segment-reference-card img,
+.segment-reference-card .segment-reference-thumb-placeholder {
+    width: 100%;
+    height: 48px;
+}
+
+.segment-reference-thumb-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #555;
+    font-size: 0.65rem;
+}
+
+.segment-reference-caption {
+    color: #8d8da8;
+    font-size: 0.64rem;
+    margin-top: 0.2rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.segment-reference-card button {
+    position: absolute;
+    top: 0.12rem;
+    right: 0.12rem;
+    width: 16px;
+    height: 16px;
+    background: rgba(0, 0, 0, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 50%;
+    color: #ddd;
+    cursor: pointer;
+    font-size: 0.72rem;
+    line-height: 1;
+    padding: 0;
+    opacity: 0;
+    transition: opacity 0.14s, background 0.14s;
+}
+
+.segment-reference-card:hover button {
+    opacity: 1;
+}
+
+.segment-reference-card button:hover {
+    background: rgba(255, 80, 80, 0.65);
+    color: #fff;
+}

@@ -3,13 +3,72 @@ import { useProjectStore } from '../../stores/projectStore';
 import { invoke } from '@tauri-apps/api/core';
 import { ASSET_CATEGORIES } from '../../types';
 import type { AssetCategory } from '../../types';
+import { buildManualImageImportPlan, isSupportedImagePath } from '../../utils/assetImport';
+import { addTagsFromDraft, removeTagAt } from '../../utils/assetTags';
 import './AssetSidebar.css';
+
+interface AssetTagInputProps {
+    tags: string[];
+    onChange: (tags: string[]) => void;
+}
+
+const AssetTagInput: React.FC<AssetTagInputProps> = ({ tags, onChange }) => {
+    const [draft, setDraft] = useState('');
+
+    const commitDraft = () => {
+        const next = addTagsFromDraft(tags, draft);
+        if (next.length !== tags.length || next.some((tag, i) => tag !== tags[i])) {
+            onChange(next);
+        }
+        setDraft('');
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === ',' || e.key === '，') {
+            e.preventDefault();
+            commitDraft();
+        } else if (e.key === 'Backspace' && draft === '' && tags.length > 0) {
+            e.preventDefault();
+            onChange(tags.slice(0, -1));
+        }
+    };
+
+    return (
+        <div className="asset-tag-editor" onClick={(e) => e.stopPropagation()}>
+            <div className="asset-tag-chip-row">
+                {tags.map((tag, idx) => (
+                    <span key={`${tag}-${idx}`} className="asset-tag-chip">
+                        {tag}
+                        <button
+                            type="button"
+                            className="asset-tag-remove"
+                            onClick={() => onChange(removeTagAt(tags, idx))}
+                            title={`删除标签 ${tag}`}
+                        >
+                            ×
+                        </button>
+                    </span>
+                ))}
+                <input
+                    className="asset-tag-draft-input"
+                    value={draft}
+                    placeholder={tags.length ? '继续输入标签...' : '输入标签，回车/空格/逗号确认'}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    onBlur={commitDraft}
+                />
+            </div>
+        </div>
+    );
+};
 
 export const AssetSidebar: React.FC = () => {
     const project = useProjectStore(s => s.project);
     const rootProject = useProjectStore(s => s.rootProject);
     const addAsset = useProjectStore(s => s.addAsset);
     const updateAsset = useProjectStore(s => s.updateAsset);
+    const updateAssetFile = useProjectStore(s => s.updateAssetFile);
+    const addFileToAsset = useProjectStore(s => s.addFileToAsset);
     const removeAsset = useProjectStore(s => s.removeAsset);
 
     const [expandedCategories, setExpandedCategories] = useState<Set<AssetCategory>>(
@@ -68,6 +127,53 @@ export const AssetSidebar: React.FC = () => {
             setLightboxType(fileType);
         } catch (err) {
             console.error('Failed to preview file:', err);
+        }
+    };
+
+    const handleImportImage = async (assetId: string) => {
+        const asset = project.assets.find(a => a.id === assetId);
+        const workspace = useProjectStore.getState().workspace;
+        if (!asset || !workspace) return;
+
+        try {
+            const { open } = await import('@tauri-apps/plugin-dialog');
+            const selected = await open({
+                multiple: true,
+                title: `导入图片到 ${asset.name}`,
+                filters: [
+                    { name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tif', 'tiff'] },
+                ],
+            });
+            if (!selected) return;
+
+            const files = Array.isArray(selected) ? selected : [selected];
+            const imageFiles = files.filter(isSupportedImagePath);
+            if (imageFiles.length === 0) {
+                alert('没有可导入的图片文件。');
+                return;
+            }
+
+            const { copyFile, mkdir } = await import('@tauri-apps/plugin-fs');
+            const importStartedAt = Date.now();
+            for (const [index, sourcePath] of imageFiles.entries()) {
+                const plan = buildManualImageImportPlan({
+                    workspace,
+                    sourcePath,
+                    category: asset.category,
+                    assetName: asset.name,
+                    now: importStartedAt + index,
+                });
+                await mkdir(plan.targetDir, { recursive: true });
+                await copyFile(plan.sourcePath, plan.targetPath);
+                addFileToAsset(asset.id, {
+                    path: plan.relativePath,
+                    type: 'screenshot',
+                    tags: [],
+                });
+            }
+        } catch (err) {
+            console.error('Failed to import asset image:', err);
+            alert(`导入图片失败: ${err}`);
         }
     };
 
@@ -165,12 +271,24 @@ export const AssetSidebar: React.FC = () => {
                                                         </div>
                                                         {isAssetExpanded && (
                                                             <div className="asset-item-body">
-                                                                <textarea
-                                                                    placeholder={`描述 ${asset.name}...`}
-                                                                    value={asset.description}
-                                                                    onChange={(e) => updateAsset(asset.id, { description: e.target.value })}
-                                                                    rows={4}
-                                                                />
+                                                                <label className="asset-textarea-label">
+                                                                    Summary
+                                                                    <textarea
+                                                                        placeholder={`${asset.name} 的上下文摘要...`}
+                                                                        value={asset.description}
+                                                                        onChange={(e) => updateAsset(asset.id, { description: e.target.value })}
+                                                                        rows={3}
+                                                                    />
+                                                                </label>
+                                                                <label className="asset-textarea-label">
+                                                                    Detail
+                                                                    <textarea
+                                                                        placeholder={`${asset.name} 的详细分析...`}
+                                                                        value={asset.detail || ''}
+                                                                        onChange={(e) => updateAsset(asset.id, { detail: e.target.value })}
+                                                                        rows={4}
+                                                                    />
+                                                                </label>
                                                                 {asset.category === 'segment_analysis' && asset.subProjectData && (
                                                                     <button 
                                                                         className="enter-analysis-btn"
@@ -182,30 +300,50 @@ export const AssetSidebar: React.FC = () => {
                                                                         🔍 进入深入拉片环境
                                                                     </button>
                                                                 )}
+                                                                {asset.category !== 'segment_analysis' && (
+                                                                    <button
+                                                                        className="import-image-btn"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleImportImage(asset.id);
+                                                                        }}
+                                                                    >
+                                                                        ＋ 导入本地图片
+                                                                    </button>
+                                                                )}
                                                                 {asset.files && asset.files.length > 0 && (
                                                                     <div className="asset-file-list">
                                                                         <h4>包含文件:</h4>
                                                                         <div className="asset-file-list-items">
                                                                             {asset.files.map((file, idx) => (
-                                                                                <div key={idx} className="asset-file-item asset-file-item--clickable" title={file.path}
-                                                                                    onClick={() => handlePreviewFile(file.path, file.type)}
-                                                                                >
-                                                                                    <span className="file-type">
-                                                                                        {file.type === 'screenshot' ? '🖼️' : file.type === 'audio' ? '🎵' : '🎬'}
-                                                                                    </span>
-                                                                                    <span className="file-name">{file.path.split('/').pop()}</span>
-                                                                                    <button
-                                                                                        className="remove-file-btn"
-                                                                                        onClick={(e) => {
-                                                                                            e.stopPropagation();
-                                                                                            if (confirm(`确定要永久删除此${file.type === 'screenshot' ? '截图' : '文件'}吗？该操作同时会删除本地磁盘上的文件！`)) {
-                                                                                                useProjectStore.getState().removeAssetFile(asset.id, file.path);
-                                                                                            }
-                                                                                        }}
-                                                                                        title="删除此文件"
+                                                                                <div key={`${file.path}-${idx}`} className="asset-file-card" title={file.path}>
+                                                                                    <div
+                                                                                        className="asset-file-item asset-file-item--clickable"
+                                                                                        onClick={() => handlePreviewFile(file.path, file.type)}
                                                                                     >
-                                                                                        ✕
-                                                                                    </button>
+                                                                                        <span className="file-type">
+                                                                                            {file.type === 'screenshot' ? '🖼️' : file.type === 'audio' ? '🎵' : '🎬'}
+                                                                                        </span>
+                                                                                        <span className="file-name">{file.path.split('/').pop()}</span>
+                                                                                        <button
+                                                                                            className="remove-file-btn"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                if (confirm(`确定要永久删除此${file.type === 'screenshot' ? '截图' : '文件'}吗？该操作同时会删除本地磁盘上的文件！`)) {
+                                                                                                    useProjectStore.getState().removeAssetFile(asset.id, file.path);
+                                                                                                }
+                                                                                            }}
+                                                                                            title="删除此文件"
+                                                                                        >
+                                                                                            ✕
+                                                                                        </button>
+                                                                                    </div>
+                                                                                    {file.type === 'screenshot' && (
+                                                                                        <AssetTagInput
+                                                                                            tags={file.tags || []}
+                                                                                            onChange={(tags) => updateAssetFile(asset.id, file.path, { tags })}
+                                                                                        />
+                                                                                    )}
                                                                                 </div>
                                                                             ))}
                                                                         </div>

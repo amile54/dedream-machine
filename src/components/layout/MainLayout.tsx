@@ -5,7 +5,10 @@ import { SegmentList } from '../segments/SegmentList';
 import { TextBlocks } from '../analysis/TextBlocks';
 import { AssetSidebar } from '../assets/AssetSidebar';
 import { useProjectStore } from '../../stores/projectStore';
+import { useVideoStore } from '../../stores/videoStore';
 import { useKeyboardShortcuts } from '../../utils/shortcuts';
+import { exportProjectSegmentsAsClips } from '../../utils/exportSegments';
+import { resolveWorkspacePath } from '../../stores/projectStore';
 import Split from 'react-split';
 import './MainLayout.css';
 
@@ -18,6 +21,7 @@ export const MainLayout: React.FC = () => {
     const switchProject = useProjectStore(s => s.switchProject);
     const activeAssetId = useProjectStore(s => s.activeAssetId);
     const exitSubProject = useProjectStore(s => s.exitSubProject);
+    const fps = useVideoStore(s => s.fps);
 
     const [isAssetSidebarOpen, setIsAssetSidebarOpen] = useState(true);
 
@@ -86,6 +90,22 @@ export const MainLayout: React.FC = () => {
                                 });
 
                                 if (!destPath) return;
+
+                                if (!project) return;
+                                const sourceVideoPath = resolveWorkspacePath(workspace, project.videoFilePath);
+                                if (!sourceVideoPath) {
+                                    throw new Error('缺少原始视频路径，无法导出片段 MP4');
+                                }
+
+                                const projectWithSegmentClips = await exportProjectSegmentsAsClips({
+                                    project,
+                                    workspace,
+                                    sourceVideoPath,
+                                    fps: fps || 24,
+                                });
+                                useProjectStore.setState({ project: projectWithSegmentClips, isDirty: true });
+
+                                await useProjectStore.getState().saveProject();
 
                                 await invoke('export_project_zip', {
                                     workspace: workspace,

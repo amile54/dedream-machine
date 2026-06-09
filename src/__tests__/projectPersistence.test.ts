@@ -13,20 +13,51 @@ function makeProject(): Project {
     videoFilePath: '/test/workspace/media/movie.mp4',
     proxyFilePath: '/test/workspace/proxy.mp4',
     subtitleFilePath: '/test/workspace/assets/subtitles/main.srt',
-    segments: [],
+    segments: [
+      {
+        id: 'segment-1',
+        index: 1,
+        startTime: 0,
+        endTime: 12,
+        description: 'Opening shot',
+        category: '正常',
+        references: [
+          {
+            assetId: 'asset-1',
+            filePath: '/test/workspace/assets/character/Hero/look.png',
+          },
+        ],
+        clipPath: '/test/workspace/assets/segment_clips/segment_001.mp4',
+      },
+    ],
     textBlocks: [],
+    sceneBlocks: [
+      {
+        id: 'scene-1',
+        sceneInfo: '第 1 场',
+        startSegmentIndex: 1,
+        endSegmentIndex: 1,
+        summary: 'Scene context',
+        detail: 'Reference answer for scene analysis',
+        sortOrder: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ],
     assets: [
       {
         id: 'asset-1',
         name: 'Scene 01',
         category: 'segment_analysis',
         description: '',
+        detail: 'Reference answer for asset analysis',
         createdAt: new Date().toISOString(),
         files: [
           {
             path: '/test/workspace/assets/segment_analysis/Scene 01/clip.mp4',
             type: 'clip',
             timestamp: 12,
+            tags: ['night', 'wide shot'],
           },
         ],
         subProjectData: {
@@ -35,6 +66,7 @@ function makeProject(): Project {
           subtitleFilePath: '/test/workspace/assets/subtitles/scene-01.srt',
           segments: [],
           textBlocks: [],
+          sceneBlocks: [],
           assets: [],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -83,9 +115,33 @@ describe('project persistence', () => {
     expect(serialized.videoFilePath).toBe('media/movie.mp4');
     expect(serialized.proxyFilePath).toBe('proxy.mp4');
     expect(serialized.subtitleFilePath).toBe('assets/subtitles/main.srt');
+    expect(serialized.segments[0].references?.[0].filePath).toBe('assets/character/Hero/look.png');
+    expect(serialized.segments[0].clipPath).toBe('assets/segment_clips/segment_001.mp4');
     expect(serialized.assets[0].files[0].path).toBe('assets/segment_analysis/Scene 01/clip.mp4');
     expect(serialized.assets[0].subProjectData?.videoFilePath).toBe('assets/segment_analysis/Scene 01/clip.mp4');
     expect(serialized.assets[0].subProjectData?.subtitleFilePath).toBe('assets/subtitles/scene-01.srt');
+  });
+
+  it('preserves Studio conversion metadata fields while serializing', () => {
+    const serialized = serializeProjectPaths(makeProject(), '/test/workspace');
+
+    expect(serialized.sceneBlocks[0]).toMatchObject({
+      sceneInfo: '第 1 场',
+      summary: 'Scene context',
+      detail: 'Reference answer for scene analysis',
+    });
+    expect(serialized.assets[0]).toMatchObject({
+      description: '',
+      detail: 'Reference answer for asset analysis',
+    });
+    expect(serialized.assets[0].files[0].tags).toEqual(['night', 'wide shot']);
+    expect(serialized.segments[0].references).toEqual([
+      {
+        assetId: 'asset-1',
+        filePath: 'assets/character/Hero/look.png',
+      },
+    ]);
+    expect(serialized.segments[0].clipPath).toBe('assets/segment_clips/segment_001.mp4');
   });
 
   it('repairs legacy segment-analysis subprojects to use their local clip path', () => {
