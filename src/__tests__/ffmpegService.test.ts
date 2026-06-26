@@ -34,4 +34,22 @@ describe('ffmpegService export clip args', () => {
     expect(args).toContain('-crf');
     expect(args[args.indexOf('-crf') + 1]).toBe('26');
   });
+
+  it('exports audio-only clips as MP3-compatible streams', () => {
+    const args = buildExportClipArgs({
+      inputPath: '/movie/source.mp4',
+      startTime: 10,
+      endTime: 20,
+      outputPath: '/out/audio.mp3',
+      isAudio: true,
+    });
+
+    expect(args).toContain('-vn');
+    expect(args).toContain('-map');
+    expect(args[args.indexOf('-map') + 1]).toBe('0:a:0');
+    expect(args).toContain('-c:a');
+    expect(args[args.indexOf('-c:a') + 1]).toBe('libmp3lame');
+    expect(args).not.toContain('aac');
+    expect(args).not.toContain('-c:v');
+  });
 });

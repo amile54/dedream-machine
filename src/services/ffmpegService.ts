@@ -75,7 +75,7 @@ export function buildExportClipArgs({
             '-t', duration.toString(),
             '-map', '0:a:0',
             '-vn',
-            '-c:a', 'aac',
+            '-c:a', 'libmp3lame',
             '-b:a', '192k',
             '-y',
             outputPath,

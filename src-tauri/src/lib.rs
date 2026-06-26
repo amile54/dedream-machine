@@ -24,6 +24,8 @@ pub struct Segment {
     pub end_time: f64,
     pub description: String,
     pub category: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
     #[serde(default)]
     pub references: Vec<SegmentReference>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "clipPath")]
@@ -367,6 +369,34 @@ mod tests {
             response.headers().get(ACCESS_CONTROL_ALLOW_ORIGIN),
             Some(&HeaderValue::from_static("*")),
         );
+    }
+
+    #[test]
+    fn segment_notes_survive_project_serde_roundtrip() {
+        let project: Project = serde_json::from_str(
+            r#"{
+              "videoFilePath": "media/movie.mp4",
+              "segments": [{
+                "id": "segment-1",
+                "index": 1,
+                "startTime": 0,
+                "endTime": 4,
+                "description": "镜头描述",
+                "category": "正常",
+                "notes": "给 Studio 转换器使用的片段备注"
+              }],
+              "textBlocks": [],
+              "sceneBlocks": [],
+              "assets": [],
+              "createdAt": "2026-06-09T00:00:00.000Z",
+              "updatedAt": "2026-06-09T00:00:00.000Z"
+            }"#,
+        )
+        .expect("project with segment notes");
+
+        let json = serde_json::to_string_pretty(&project).expect("serialize project");
+
+        assert!(json.contains("\"notes\": \"给 Studio 转换器使用的片段备注\""));
     }
 
     #[tokio::test]
