@@ -76,6 +76,10 @@ jobs:
         with:
           args: --target ${{ matrix.target }}
 
+      - name: Re-sign and verify macOS DMG
+        if: matrix.platform == 'macos-14'
+        run: scripts/resign-macos-bundle.sh "${{ matrix.target }}"
+
       - name: Package release asset (macOS)
         if: matrix.platform == 'macos-14'
         run: |
