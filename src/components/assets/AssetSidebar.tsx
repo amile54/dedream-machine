@@ -338,12 +338,10 @@ export const AssetSidebar: React.FC = () => {
                                                                                             ✕
                                                                                         </button>
                                                                                     </div>
-                                                                                    {file.type === 'screenshot' && (
-                                                                                        <AssetTagInput
-                                                                                            tags={file.tags || []}
-                                                                                            onChange={(tags) => updateAssetFile(asset.id, file.path, { tags })}
-                                                                                        />
-                                                                                    )}
+                                                                                    <AssetTagInput
+                                                                                        tags={file.tags || []}
+                                                                                        onChange={(tags) => updateAssetFile(asset.id, file.path, { tags })}
+                                                                                    />
                                                                                 </div>
                                                                             ))}
                                                                         </div>

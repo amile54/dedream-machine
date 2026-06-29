@@ -60,7 +60,7 @@ export interface AssetFile {
   path: string;          // relative to workspace
   timestamp?: number;    // video time where this was captured
   type: 'screenshot' | 'clip' | 'audio';
-  tags?: string[];       // per-file visual labels, e.g. costume/look tags
+  tags?: string[];       // per-file labels for screenshots, clips, and audio
 }
 
 export interface Asset {
